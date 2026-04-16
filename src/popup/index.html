@@ -46,6 +46,17 @@
           </span>
         </label>
       </div>
+      <div class="row toggle">
+        <input id="inject-legacy" type="checkbox" checked />
+        <label for="inject-legacy">
+          Inject legacy <code>window.aptos</code> (Petra shim)
+          <span class="hint">
+            Needed for older dApps (Aries, Pontem UI, etc.) that don't yet
+            use AIP-62 discovery. Off → strict AIP-62 only. Changing this
+            requires a page reload.
+          </span>
+        </label>
+      </div>
       <button id="save" type="button">Save</button>
       <p id="save-status" class="muted" aria-live="polite"></p>
     </section>

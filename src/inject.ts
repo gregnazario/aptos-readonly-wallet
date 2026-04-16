@@ -15,6 +15,7 @@
  */
 
 import { registerWallet } from "@aptos-labs/wallet-standard";
+import { LegacyPetraAPI } from "./legacy-api";
 import {
   DEFAULT_STATE,
   type ContentToPage,
@@ -27,6 +28,7 @@ import { ViewOnlyWallet, type ViewOnlyWalletBridge } from "./wallet";
 
 type StateListener = (s: WalletState) => void;
 const listeners = new Set<StateListener>();
+let currentState: WalletState = DEFAULT_STATE;
 
 const bridge: ViewOnlyWalletBridge = {
   onStateChanged(cb) {
@@ -44,7 +46,15 @@ window.addEventListener("message", (event: MessageEvent) => {
   const data = event.data as ContentToPage | undefined;
   if (!data || data.tag !== VOW_TAG) return;
   if (data.kind === "state" || data.kind === "state-changed") {
+    currentState = data.state;
     for (const cb of listeners) cb(data.state);
+
+    // One-shot install of the legacy Petra shim once we know the flag.
+    // Pre-existing `window.aptos` (real Petra) is *not* overwritten — we
+    // only install when the slot is free, so coexistence is safe.
+    if (data.kind === "state" && data.state.injectLegacyApi) {
+      installLegacyApi();
+    }
   }
 });
 
@@ -57,3 +67,20 @@ registerWallet(wallet);
 
 const getStateMsg: PageToContent = { tag: VOW_TAG, kind: "get-state" };
 window.postMessage(getStateMsg, window.location.origin);
+
+let legacyInstalled = false;
+function installLegacyApi() {
+  if (legacyInstalled) return;
+  legacyInstalled = true;
+  const legacy = new LegacyPetraAPI({
+    getState: () => currentState,
+    recordPayload: bridge.recordPayload,
+    onStateChanged: (cb) => listeners.add(cb),
+  });
+  const w = window as unknown as { aptos?: unknown; petra?: unknown };
+  // Don't clobber a real Petra install. If the slot's free, claim it.
+  if (!w.aptos) w.aptos = legacy;
+  if (!w.petra) w.petra = legacy;
+  // eslint-disable-next-line no-console
+  console.log("%c[View-Only Wallet] Legacy window.aptos shim installed", "color:#2563eb");
+}

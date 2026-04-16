@@ -40,6 +40,17 @@ export interface WalletState {
    * Anything produced this way is of course invalid on-chain.
    */
   autoReject: boolean;
+  /**
+   * When true (default), install a legacy Petra-compatible shim on
+   * `window.aptos` + `window.petra` in addition to AIP-62 registration.
+   * Needed for older dApps (Aries, Pontem, etc.) that haven't migrated
+   * to the wallet-standard discovery path.
+   *
+   * When false, the extension is strict AIP-62 only — it never touches
+   * `window.*`. Matches the original design intent. Changing this
+   * requires a page reload to take effect.
+   */
+  injectLegacyApi: boolean;
 }
 
 export interface LoggedPayload {
@@ -58,6 +69,7 @@ export const DEFAULT_STATE: WalletState = {
   network: "mainnet",
   chainId: 1,
   autoReject: true,
+  injectLegacyApi: true,
 };
 
 export const CHAIN_IDS: Record<WalletState["network"], number> = {

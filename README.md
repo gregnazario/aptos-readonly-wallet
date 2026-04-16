@@ -16,14 +16,21 @@ Useful for:
 - Testing that your AIP-62 wallet-adapter integration handles rejected
   signatures gracefully.
 
-> The extension **does not touch `window.aptos` or `window.petra`**.
-> Registration is done purely through `wallet-standard:register-wallet`,
+> Primary registration is done through `wallet-standard:register-wallet`,
 > the event the AIP-62 / `@aptos-labs/wallet-standard` package standardizes.
 >
 > **It registers itself as "Petra"** (not "View-Only Wallet") so dApps that
 > hard-allowlist wallet names — e.g. `optInWallets={['Petra']}` — still
 > surface it. The popup UI inside the extension remains labeled "View-Only
 > Wallet" so *you* always know what you're actually running.
+>
+> **Legacy `window.aptos` / `window.petra` shim** (on by default) — some
+> dApps (Aries, Pontem UI, other older integrations) still predate AIP-62
+> and discover wallets only by sniffing `window.aptos`. For these, the
+> extension also installs a Petra-compatible shim on `window.aptos` and
+> `window.petra` (only if nothing else has already claimed those slots).
+> You can switch this off in the popup for a strict-AIP-62-only mode that
+> never touches `window.*`.
 
 ---
 
@@ -123,7 +130,17 @@ Available scripts:
      post-signing UI flow. ⚠️ The outputs are invalid — nothing is ever on
      chain, and any `waitForTransaction(hash)` call on the dApp side will
      error.
-5. Click **Save**. You'll see a confirmation like `✓ Saved 0x0000000… · auto-reject ON`.
+5. **Inject legacy `window.aptos` (Petra shim)** checkbox:
+   - **On** (default): in addition to AIP-62 registration, the extension
+     installs a Petra-compatible shim on `window.aptos` and `window.petra`
+     (only if those slots are free). This is what makes the wallet visible
+     to older dApps like Aries and Pontem UI that haven't migrated to the
+     wallet-standard discovery path.
+   - **Off**: strict AIP-62 only. The extension never touches `window.*`.
+     Matches the original design intent — useful for verifying your dApp's
+     AIP-62 integration doesn't secretly depend on the legacy API.
+   - Changing this requires reloading the dApp tab.
+6. Click **Save**. You'll see a confirmation like `✓ Saved 0x0000000… · auto-reject ON · window.aptos ON`.
 
 You can come back to the popup at any time to change the address. The wallet
 fires `aptos:onAccountChange` automatically, so any dApp that's already
@@ -250,6 +267,7 @@ Files you're most likely to edit:
 | File                   | Purpose                                                      |
 | :--------------------- | :----------------------------------------------------------- |
 | `src/wallet.ts`        | The AIP-62 `ViewOnlyWallet` class itself.                    |
+| `src/legacy-api.ts`    | Pre-AIP-62 `window.aptos` Petra shim (optional).             |
 | `src/inject.ts`        | MAIN-world entry: builds the wallet + calls `registerWallet`. |
 | `src/content.ts`       | ISOLATED-world bridge between MAIN and the service worker.    |
 | `src/background.ts`    | Service worker: storage + toolbar badge.                     |
@@ -325,7 +343,7 @@ signatures.
 
 ## Troubleshooting
 
-**"View-Only Wallet" doesn't show up in the dApp's wallet picker.**
+**"Petra" doesn't show up in the dApp's wallet picker.**
 - Make sure you reloaded the dApp tab *after* loading the extension.
 - Confirm the extension is enabled in `chrome://extensions`.
 - Open the page's devtools console on the dApp; you should see the wallet
@@ -334,6 +352,12 @@ signatures.
   that the URL isn't on a Chrome-restricted origin (like
   `chrome://extensions`, the Chrome Web Store, etc., which all block
   content scripts).
+- If the dApp is older (Aries, Pontem UI, etc.) and discovers wallets via
+  `window.aptos`, make sure **Inject legacy window.aptos** is ON in the
+  popup and reload the dApp tab.
+- If real Petra is also installed, it owns `window.aptos` first — the shim
+  won't overwrite it. Disable Petra temporarily in `chrome://extensions`
+  to let the shim claim the slot.
 
 **Connect fails / wallet says "no address configured".**
 - Open the popup and save an address first. Until an address is saved,

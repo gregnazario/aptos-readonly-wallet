@@ -22,6 +22,7 @@ const $ = <T extends HTMLElement>(sel: string): T => {
 const addressInput = $<HTMLInputElement>("#address");
 const networkSelect = $<HTMLSelectElement>("#network");
 const autoRejectInput = $<HTMLInputElement>("#auto-reject");
+const injectLegacyInput = $<HTMLInputElement>("#inject-legacy");
 const saveBtn = $<HTMLButtonElement>("#save");
 const saveStatus = $<HTMLParagraphElement>("#save-status");
 const clearBtn = $<HTMLButtonElement>("#clear");
@@ -40,6 +41,7 @@ function renderState(state: WalletState) {
   addressInput.value = state.address ?? "";
   networkSelect.value = state.network;
   autoRejectInput.checked = state.autoReject;
+  injectLegacyInput.checked = state.injectLegacyApi;
 }
 
 function formatTime(ts: number): string {
@@ -102,12 +104,16 @@ saveBtn.addEventListener("click", async () => {
     network,
     chainId: CHAIN_IDS[network],
     autoReject: autoRejectInput.checked,
+    injectLegacyApi: injectLegacyInput.checked,
   };
   await saveState(state);
-  const mode = state.autoReject ? "auto-reject ON" : "auto-reject OFF (⚠️ fake approvals)";
+  const modes = [
+    state.autoReject ? "auto-reject ON" : "auto-reject OFF (⚠️ fake approvals)",
+    state.injectLegacyApi ? "window.aptos ON" : "AIP-62 only",
+  ].join(" · ");
   saveStatus.textContent = address
-    ? `✓ Saved ${address.slice(0, 10)}… · ${mode}`
-    : `✓ Address cleared · ${mode}`;
+    ? `✓ Saved ${address.slice(0, 10)}… · ${modes}`
+    : `✓ Address cleared · ${modes}`;
   saveStatus.style.color = "";
 });
 
