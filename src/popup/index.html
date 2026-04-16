@@ -12,8 +12,9 @@
         View-Only Wallet
       </h1>
       <p class="sub">
-        Impersonates an Aptos address. Transactions are never signed — the
-        payload is logged here and to the page's devtools console.
+        Impersonates an Aptos address. Registers with dApps as
+        <strong>"Petra"</strong> so they'll surface it. Transactions are never
+        signed — the payload is logged here and to the page's devtools console.
       </p>
     </header>
 
@@ -34,6 +35,16 @@
           <option value="devnet">Devnet (3)</option>
           <option value="localnet">Localnet (4)</option>
         </select>
+      </div>
+      <div class="row toggle">
+        <input id="auto-reject" type="checkbox" checked />
+        <label for="auto-reject">
+          Auto-reject signing requests
+          <span class="hint">
+            Off → return fake <code>APPROVED</code> with all-zero signatures.
+            The dApp's success path runs; anything produced is invalid on-chain.
+          </span>
+        </label>
       </div>
       <button id="save" type="button">Save</button>
       <p id="save-status" class="muted" aria-live="polite"></p>

@@ -32,6 +32,14 @@ export interface WalletState {
   network: "mainnet" | "testnet" | "devnet" | "localnet";
   /** Chain ID for the chosen network. */
   chainId: number;
+  /**
+   * When true (default), every signing request returns `REJECTED`.
+   * When false, signing requests return `APPROVED` with dummy all-zero
+   * signatures / zero hash so the dApp's success path runs. Useful for
+   * exercising UI flows that only fire after a "successful" signature.
+   * Anything produced this way is of course invalid on-chain.
+   */
+  autoReject: boolean;
 }
 
 export interface LoggedPayload {
@@ -49,6 +57,7 @@ export const DEFAULT_STATE: WalletState = {
   address: null,
   network: "mainnet",
   chainId: 1,
+  autoReject: true,
 };
 
 export const CHAIN_IDS: Record<WalletState["network"], number> = {

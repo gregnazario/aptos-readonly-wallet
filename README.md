@@ -19,6 +19,11 @@ Useful for:
 > The extension **does not touch `window.aptos` or `window.petra`**.
 > Registration is done purely through `wallet-standard:register-wallet`,
 > the event the AIP-62 / `@aptos-labs/wallet-standard` package standardizes.
+>
+> **It registers itself as "Petra"** (not "View-Only Wallet") so dApps that
+> hard-allowlist wallet names — e.g. `optInWallets={['Petra']}` — still
+> surface it. The popup UI inside the extension remains labeled "View-Only
+> Wallet" so *you* always know what you're actually running.
 
 ---
 
@@ -108,7 +113,17 @@ Available scripts:
    (`0x0000…0001`) are accepted; the popup normalizes on save.
 3. Choose the **Network** dropdown (Mainnet / Testnet / Devnet / Localnet).
    This sets the `chainId` the wallet reports to dApps.
-4. Click **Save**. You'll see a confirmation like `✓ Saved 0x0000000…`.
+4. **Auto-reject signing requests** checkbox:
+   - **On** (default, safe): every `signTransaction` / `signAndSubmitTransaction`
+     / `signMessage` call is logged and immediately returns
+     `UserResponseStatus.REJECTED`. The dApp's "user cancelled" path runs.
+   - **Off**: the wallet still can't actually sign anything, but it returns
+     a fake `UserResponseStatus.APPROVED` with all-zero dummy signatures and
+     a zero transaction hash. This lets you exercise the dApp's
+     post-signing UI flow. ⚠️ The outputs are invalid — nothing is ever on
+     chain, and any `waitForTransaction(hash)` call on the dApp side will
+     error.
+5. Click **Save**. You'll see a confirmation like `✓ Saved 0x0000000… · auto-reject ON`.
 
 You can come back to the popup at any time to change the address. The wallet
 fires `aptos:onAccountChange` automatically, so any dApp that's already
@@ -123,8 +138,11 @@ Open any Aptos dApp that uses `@aptos-labs/wallet-adapter-react`
 your own app, etc.).
 
 1. Click **Connect Wallet**.
-2. In the wallet picker you'll see a new entry: **"View-Only Wallet"** (eye
-   icon).
+2. In the wallet picker you'll see an entry named **"Petra"** (the
+   extension impersonates Petra — see the note near the top of this README).
+   If real Petra is *also* installed, both entries show up; pick the one
+   with the plain rounded "P" icon (our impersonation) vs. Petra's
+   gradient one.
 3. Select it. The dApp calls `aptos:connect`; the extension returns the
    address you entered.
 4. Trigger any action that requires signing — a swap, a transfer, a
@@ -276,18 +294,21 @@ Files you're most likely to edit:
 
 ## What each AIP-62 method does
 
-| AIP-62 feature                    | Behavior                                                                |
-| :-------------------------------- | :---------------------------------------------------------------------- |
-| `aptos:connect`                   | Returns the impersonated `AccountInfo` (with a zero dummy public key).  |
-| `aptos:disconnect`                | Marks the wallet disconnected. No side effects.                         |
-| `aptos:account`                   | Returns the current `AccountInfo`.                                      |
-| `aptos:network`                   | Returns the selected `NetworkInfo` (name + chainId).                    |
-| `aptos:onAccountChange`           | Registers a callback; fires when you change address in the popup.       |
-| `aptos:onNetworkChange`           | Registers a callback; fires when you change network in the popup.       |
-| `aptos:signAndSubmitTransaction`  | Logs `InputGenerateTransactionPayloadData`, returns `REJECTED`.         |
-| `aptos:signTransaction` (v1.0)    | Logs the `AnyRawTransaction` + `asFeePayer` flag, returns `REJECTED`.   |
-| `aptos:signTransaction` (v1.1)    | Logs the full input object (payload, fee payer, secondary signers…).   |
-| `aptos:signMessage`               | Logs the message + nonce, returns `REJECTED`.                           |
+The three signing rows depend on the **Auto-reject** toggle in the popup.
+Default is `on`.
+
+| AIP-62 feature                    | `auto-reject: on`                                                         | `auto-reject: off`                                                                    |
+| :-------------------------------- | :------------------------------------------------------------------------ | :------------------------------------------------------------------------------------ |
+| `aptos:connect`                   | Returns the impersonated `AccountInfo` (with a zero dummy public key).    | _(same)_                                                                              |
+| `aptos:disconnect`                | Marks the wallet disconnected.                                            | _(same)_                                                                              |
+| `aptos:account`                   | Returns the current `AccountInfo`.                                        | _(same)_                                                                              |
+| `aptos:network`                   | Returns the selected `NetworkInfo` (name + chainId).                      | _(same)_                                                                              |
+| `aptos:onAccountChange`           | Registers a callback; fires when you change address in the popup.         | _(same)_                                                                              |
+| `aptos:onNetworkChange`           | Registers a callback; fires when you change network in the popup.         | _(same)_                                                                              |
+| `aptos:signAndSubmitTransaction`  | Logs payload, returns `REJECTED`.                                         | Logs payload, returns `APPROVED` with `hash = 0x0…0`.                                 |
+| `aptos:signTransaction` (v1.0)    | Logs payload, returns `REJECTED`.                                         | Logs payload, returns `APPROVED` with an all-zero `AccountAuthenticatorEd25519`.      |
+| `aptos:signTransaction` (v1.1)    | Logs payload, returns `REJECTED`.                                         | Logs payload, returns `APPROVED` with `{ authenticator, rawTransaction }` (both dummy). |
+| `aptos:signMessage`               | Logs input, returns `REJECTED`.                                           | Logs input, returns `APPROVED` with an all-zero `Ed25519Signature` + full `APTOS…` envelope. |
 
 ---
 
@@ -348,9 +369,12 @@ signatures.
 
 ## Caveats
 
-- Returns `REJECTED` for every signing request. This is a correct status in
-  the standard, but if a dApp treats "rejected" as "fatal error" it will
-  surface an error UI.
+- By default, returns `REJECTED` for every signing request. This is a
+  correct status in the standard, but if a dApp treats "rejected" as "fatal
+  error" it will surface an error UI. Toggle **Auto-reject** off in the
+  popup if you need the dApp to see an `APPROVED` response — note that the
+  signatures and hash produced are all-zero dummies and will not round-trip
+  through the chain.
 - No simulated-transaction support. The payload is recorded as-is; the
   wallet does not call `aptos.transaction.simulate` for you.
 - Firefox is not supported yet — MV3 content-script `world: "MAIN"` ships

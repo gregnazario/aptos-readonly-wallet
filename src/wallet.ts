@@ -17,7 +17,9 @@
 
 import {
   AccountAddress,
+  AccountAuthenticatorEd25519,
   Ed25519PublicKey,
+  Ed25519Signature,
   Network,
   SigningScheme,
 } from "@aptos-labs/ts-sdk";
@@ -39,10 +41,15 @@ import {
   type WalletState,
 } from "./shared/messages";
 
-// Tiny inline SVG so we don't need an image asset. Base64 of a blue eye.
+/**
+ * Petra-style icon: black rounded square with the stylized white "P" mark.
+ * Close enough visually for dApp wallet pickers that render small icons.
+ * The real Petra icon is proprietary; this is a plain approximation so
+ * the impersonation is *identity*-level (name + url), not asset theft.
+ */
 const ICON = ("data:image/svg+xml;base64," +
   btoa(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="#000"/><path d="M15 12h12c5 0 9 3.5 9 9s-4 9-9 9h-6v6h-6V12zm6 6v6h5c1.7 0 3-1.3 3-3s-1.3-3-3-3h-5z" fill="#fff"/></svg>`,
   )) as WalletIcon;
 
 /**
@@ -51,6 +58,13 @@ const ICON = ("data:image/svg+xml;base64," +
  * the wallet cannot and will not sign with it.
  */
 const DUMMY_PUBKEY = new Ed25519PublicKey(new Uint8Array(32));
+const DUMMY_SIGNATURE = new Ed25519Signature(new Uint8Array(64));
+const DUMMY_AUTHENTICATOR = new AccountAuthenticatorEd25519(
+  DUMMY_PUBKEY,
+  DUMMY_SIGNATURE,
+);
+const DUMMY_TX_HASH =
+  "0x0000000000000000000000000000000000000000000000000000000000000000";
 
 export class ViewOnlyWalletAccount implements AptosWalletAccount {
   readonly address: string;
@@ -58,7 +72,8 @@ export class ViewOnlyWalletAccount implements AptosWalletAccount {
   readonly chains: AptosWalletAccount["chains"];
   readonly features: AptosWalletAccount["features"];
   readonly signingScheme = SigningScheme.Ed25519;
-  readonly label = "View-Only";
+  // Intentionally plain so the account row doesn't scream "fake" to the dApp.
+  readonly label = "Petra";
 
   constructor(address: AccountAddress) {
     this.address = address.toString();
@@ -130,8 +145,10 @@ export interface ViewOnlyWalletBridge {
 
 export class ViewOnlyWallet implements AptosWallet {
   readonly version = "1.0.0" as const;
-  readonly name = "View-Only Wallet";
-  readonly url = "https://github.com/gregnazario/view-only-wallet";
+  // Impersonates Petra so dApps that hard-allowlist wallet names (common
+  // pattern with `optInWallets={['Petra']}`) discover us.
+  readonly name = "Petra";
+  readonly url = "https://petra.app";
   readonly icon = ICON;
   readonly chains = APTOS_CHAINS;
 
@@ -273,7 +290,24 @@ export class ViewOnlyWallet implements AptosWallet {
           : { rawTransaction: firstArg, asFeePayer: maybeFeePayer ?? false };
 
         this._surfacePayload("signTransaction", toLog);
-        return { status: UserResponseStatus.REJECTED };
+        if (this._state.autoReject) {
+          return { status: UserResponseStatus.REJECTED };
+        }
+        // V1.1 callers pass an object and expect { authenticator, rawTransaction }.
+        // V1.0 callers pass the raw transaction positionally and expect just the authenticator.
+        if (looksLikeV11) {
+          return {
+            status: UserResponseStatus.APPROVED,
+            args: {
+              authenticator: DUMMY_AUTHENTICATOR,
+              rawTransaction: firstArg.payload ?? firstArg,
+            },
+          };
+        }
+        return {
+          status: UserResponseStatus.APPROVED,
+          args: DUMMY_AUTHENTICATOR,
+        };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       }) as any,
     },
@@ -281,14 +315,43 @@ export class ViewOnlyWallet implements AptosWallet {
       version: "1.1.0",
       signAndSubmitTransaction: async (tx) => {
         this._surfacePayload("signAndSubmitTransaction", tx);
-        return { status: UserResponseStatus.REJECTED };
+        if (this._state.autoReject) {
+          return { status: UserResponseStatus.REJECTED };
+        }
+        return {
+          status: UserResponseStatus.APPROVED,
+          args: { hash: DUMMY_TX_HASH },
+        };
       },
     },
     "aptos:signMessage": {
       version: "1.0.0",
       signMessage: async (input) => {
         this._surfacePayload("signMessage", input);
-        return { status: UserResponseStatus.REJECTED };
+        if (this._state.autoReject) {
+          return { status: UserResponseStatus.REJECTED };
+        }
+        // Build the full signed-message envelope with zero signature.
+        const parts: string[] = ["APTOS"];
+        if (input.address && this._account) parts.push(`address: ${this._account.address}`);
+        if (input.chainId) parts.push(`chainId: ${this._state.chainId}`);
+        if (input.application) parts.push(`application: ${window.location.origin}`);
+        parts.push(`nonce: ${input.nonce}`, `message: ${input.message}`);
+        const fullMessage = parts.join("\n");
+
+        return {
+          status: UserResponseStatus.APPROVED,
+          args: {
+            prefix: "APTOS" as const,
+            fullMessage,
+            message: input.message,
+            nonce: input.nonce,
+            signature: DUMMY_SIGNATURE,
+            ...(input.address && this._account ? { address: this._account.address } : {}),
+            ...(input.chainId ? { chainId: this._state.chainId } : {}),
+            ...(input.application ? { application: window.location.origin } : {}),
+          },
+        };
       },
     },
   };

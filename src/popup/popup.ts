@@ -21,6 +21,7 @@ const $ = <T extends HTMLElement>(sel: string): T => {
 
 const addressInput = $<HTMLInputElement>("#address");
 const networkSelect = $<HTMLSelectElement>("#network");
+const autoRejectInput = $<HTMLInputElement>("#auto-reject");
 const saveBtn = $<HTMLButtonElement>("#save");
 const saveStatus = $<HTMLParagraphElement>("#save-status");
 const clearBtn = $<HTMLButtonElement>("#clear");
@@ -38,6 +39,7 @@ async function saveState(state: WalletState): Promise<void> {
 function renderState(state: WalletState) {
   addressInput.value = state.address ?? "";
   networkSelect.value = state.network;
+  autoRejectInput.checked = state.autoReject;
 }
 
 function formatTime(ts: number): string {
@@ -99,9 +101,13 @@ saveBtn.addEventListener("click", async () => {
     address,
     network,
     chainId: CHAIN_IDS[network],
+    autoReject: autoRejectInput.checked,
   };
   await saveState(state);
-  saveStatus.textContent = address ? `✓ Saved ${address.slice(0, 10)}…` : "✓ Address cleared.";
+  const mode = state.autoReject ? "auto-reject ON" : "auto-reject OFF (⚠️ fake approvals)";
+  saveStatus.textContent = address
+    ? `✓ Saved ${address.slice(0, 10)}… · ${mode}`
+    : `✓ Address cleared · ${mode}`;
   saveStatus.style.color = "";
 });
 
