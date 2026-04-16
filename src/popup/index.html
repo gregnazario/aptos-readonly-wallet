@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>View-Only Wallet</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>
+        <span class="eye" aria-hidden="true">👁️</span>
+        View-Only Wallet
+      </h1>
+      <p class="sub">
+        Impersonates an Aptos address. Transactions are never signed — the
+        payload is logged here and to the page's devtools console.
+      </p>
+    </header>
+
+    <section class="card">
+      <label for="address">Impersonated address</label>
+      <input
+        id="address"
+        type="text"
+        spellcheck="false"
+        placeholder="0x1 or 0x… (64 hex chars)"
+        autocomplete="off"
+      />
+      <div class="row">
+        <label for="network">Network</label>
+        <select id="network">
+          <option value="mainnet">Mainnet (1)</option>
+          <option value="testnet">Testnet (2)</option>
+          <option value="devnet">Devnet (3)</option>
+          <option value="localnet">Localnet (4)</option>
+        </select>
+      </div>
+      <button id="save" type="button">Save</button>
+      <p id="save-status" class="muted" aria-live="polite"></p>
+    </section>
+
+    <section class="card">
+      <div class="row between">
+        <h2>Intercepted payloads</h2>
+        <button id="clear" type="button" class="link">Clear</button>
+      </div>
+      <ol id="log" class="log" aria-live="polite">
+        <li class="empty">No payloads yet. Connect on a dApp and try a transaction.</li>
+      </ol>
+    </section>
+
+    <footer>
+      <small>AIP-62 · wallet-standard · does not use <code>window.aptos</code>.</small>
+    </footer>
+
+    <script type="module" src="./popup.ts"></script>
+  </body>
+</html>

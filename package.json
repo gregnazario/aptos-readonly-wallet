@@ -1,0 +1,23 @@
+{
+  "name": "view-only-wallet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension: AIP-62 view-only Aptos wallet that prints transaction payloads instead of signing them.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aptos-labs/ts-sdk": "^5.2.1",
+    "@aptos-labs/wallet-standard": "^0.5.2"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.4.0",
+    "@types/chrome": "^0.1.40",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.8"
+  },
+  "packageManager": "pnpm@10.33.0"
+}
