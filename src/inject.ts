@@ -65,6 +65,20 @@ window.addEventListener("message", (event: MessageEvent) => {
 const wallet = new ViewOnlyWallet(DEFAULT_STATE, bridge);
 registerWallet(wallet);
 
+// Startup banner. Makes it obvious at page-load time that the extension
+// is injected, under what AIP-62 name, and which other wallet slots are
+// already claimed (so we can tell if real Petra is coexisting, etc.).
+{
+  const w = window as unknown as { aptos?: unknown; petra?: unknown };
+  const aptosClaimed = w.aptos ? "taken" : "free";
+  const petraClaimed = w.petra ? "taken" : "free";
+  // eslint-disable-next-line no-console
+  console.log(
+    `%c[View-Only Wallet] registered AIP-62 wallet "${wallet.name}" · window.aptos ${aptosClaimed} · window.petra ${petraClaimed}`,
+    "color:#2563eb;font-weight:bold",
+  );
+}
+
 const getStateMsg: PageToContent = { tag: VOW_TAG, kind: "get-state" };
 window.postMessage(getStateMsg, window.location.origin);
 
@@ -79,8 +93,13 @@ function installLegacyApi() {
   });
   const w = window as unknown as { aptos?: unknown; petra?: unknown };
   // Don't clobber a real Petra install. If the slot's free, claim it.
-  if (!w.aptos) w.aptos = legacy;
-  if (!w.petra) w.petra = legacy;
+  const tookAptos = !w.aptos;
+  const tookPetra = !w.petra;
+  if (tookAptos) w.aptos = legacy;
+  if (tookPetra) w.petra = legacy;
   // eslint-disable-next-line no-console
-  console.log("%c[View-Only Wallet] Legacy window.aptos shim installed", "color:#2563eb");
+  console.log(
+    `%c[View-Only Wallet] Legacy shim installed · window.aptos=${tookAptos ? "claimed" : "already taken (coexisting with real Petra?)"} · window.petra=${tookPetra ? "claimed" : "already taken"}`,
+    "color:#2563eb;font-weight:bold",
+  );
 }

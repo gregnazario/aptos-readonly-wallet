@@ -60,6 +60,24 @@ export class LegacyPetraAPI {
     }
   }
 
+  /**
+   * Compact one-line trace for every legacy entry point. Helps you see when
+   * a dApp is reaching us via `window.aptos` / `window.petra` vs. the
+   * AIP-62 wallet-standard path.
+   */
+  private _logCall(method: string, extra?: unknown): void {
+    const origin = window.location.origin;
+    const tag = `[View-Only Wallet · legacy window.aptos] ${method}`;
+    // eslint-disable-next-line no-console
+    if (extra !== undefined) {
+      // eslint-disable-next-line no-console
+      console.log(`%c${tag}`, "color:#db2777;font-weight:bold", origin, extra);
+    } else {
+      // eslint-disable-next-line no-console
+      console.log(`%c${tag}`, "color:#db2777;font-weight:bold", origin);
+    }
+  }
+
   private _requireAddress(): string {
     const { address } = this._bridge.getState();
     if (!address) {
@@ -99,24 +117,30 @@ export class LegacyPetraAPI {
   }
 
   async connect(): Promise<{ address: string; publicKey: string }> {
+    this._logCall("connect");
     const address = this._requireAddress();
     return { address, publicKey: DUMMY_HEX_32 };
   }
 
   async isConnected(): Promise<boolean> {
-    return this._bridge.getState().address != null;
+    const connected = this._bridge.getState().address != null;
+    this._logCall("isConnected", { connected });
+    return connected;
   }
 
   async disconnect(): Promise<void> {
+    this._logCall("disconnect");
     this._emit("disconnect");
   }
 
   async account(): Promise<{ address: string; publicKey: string }> {
+    this._logCall("account");
     const address = this._requireAddress();
     return { address, publicKey: DUMMY_HEX_32 };
   }
 
   async network(): Promise<{ name: string; chainId: string; url?: string }> {
+    this._logCall("network");
     const { network, chainId } = this._bridge.getState();
     // Petra historically returns the capitalized name.
     const name = network.charAt(0).toUpperCase() + network.slice(1);
@@ -124,6 +148,7 @@ export class LegacyPetraAPI {
   }
 
   async getNetwork(): Promise<{ name: string; chainId: string; url?: string }> {
+    this._logCall("getNetwork");
     return this.network();
   }
 
@@ -197,23 +222,28 @@ export class LegacyPetraAPI {
   }
 
   onAccountChange(cb: (acc: { address: string; publicKey: string }) => void): void {
+    this._logCall("onAccountChange");
     this._listeners.accountChange.add(cb as (arg?: unknown) => void);
   }
 
   onNetworkChange(cb: (net: string) => void): void {
+    this._logCall("onNetworkChange");
     this._listeners.networkChange.add(cb as (arg?: unknown) => void);
   }
 
   onDisconnect(cb: () => void): void {
+    this._logCall("onDisconnect");
     this._listeners.disconnect.add(cb as (arg?: unknown) => void);
   }
 
   // Some integrations use a generic on/off pattern.
   on(event: LegacyEvent, cb: (arg?: unknown) => void): void {
+    this._logCall(`on("${event}")`);
     if (this._listeners[event]) this._listeners[event].add(cb);
   }
 
   off(event: LegacyEvent, cb: (arg?: unknown) => void): void {
+    this._logCall(`off("${event}")`);
     this._listeners[event]?.delete(cb);
   }
 }

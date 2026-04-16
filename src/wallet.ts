@@ -235,6 +235,25 @@ export class ViewOnlyWallet implements AptosWallet {
     });
   }
 
+  /**
+   * Compact one-line trace for every AIP-62 entry point. Goes to the *page's*
+   * devtools console only (not the popup log — that's reserved for signing
+   * payloads). Useful for diagnosing which wallet surface a dApp is actually
+   * hitting when multiple are registered (AIP-62 vs legacy window.aptos).
+   */
+  private _logCall(method: string, extra?: unknown): void {
+    const origin = window.location.origin;
+    const tag = `[View-Only Wallet · AIP-62 · ${this.name}] ${method}`;
+    // eslint-disable-next-line no-console
+    if (extra !== undefined) {
+      // eslint-disable-next-line no-console
+      console.log(`%c${tag}`, "color:#2563eb;font-weight:bold", origin, extra);
+    } else {
+      // eslint-disable-next-line no-console
+      console.log(`%c${tag}`, "color:#2563eb;font-weight:bold", origin);
+    }
+  }
+
   private _surfacePayload(
     kind: LoggedPayload["kind"],
     rawPayload: unknown,
@@ -262,7 +281,8 @@ export class ViewOnlyWallet implements AptosWallet {
   readonly features: AptosFeatures = {
     "aptos:connect": {
       version: "1.0.0",
-      connect: async (_silent, _networkInfo): Promise<UserResponse<AccountInfo>> => {
+      connect: async (silent, networkInfo): Promise<UserResponse<AccountInfo>> => {
+        this._logCall("connect", { silent, networkInfo, hasAddress: this._account != null });
         if (!this._account) {
           return { status: UserResponseStatus.REJECTED };
         }
@@ -276,26 +296,35 @@ export class ViewOnlyWallet implements AptosWallet {
     "aptos:disconnect": {
       version: "1.0.0",
       disconnect: async () => {
+        this._logCall("disconnect");
         this._connected = false;
       },
     },
     "aptos:account": {
       version: "1.0.0",
-      account: async () => this._accountInfoOrThrow(),
+      account: async () => {
+        this._logCall("account");
+        return this._accountInfoOrThrow();
+      },
     },
     "aptos:network": {
       version: "1.0.0",
-      network: async () => stateToNetworkInfo(this._state),
+      network: async () => {
+        this._logCall("network");
+        return stateToNetworkInfo(this._state);
+      },
     },
     "aptos:onAccountChange": {
       version: "1.0.0",
       onAccountChange: async (cb) => {
+        this._logCall("onAccountChange");
         this._accountChangeCbs.add(cb);
       },
     },
     "aptos:onNetworkChange": {
       version: "1.0.0",
       onNetworkChange: async (cb) => {
+        this._logCall("onNetworkChange");
         this._networkChangeCbs.add(cb);
       },
     },
