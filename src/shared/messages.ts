@@ -51,6 +51,17 @@ export interface WalletState {
    * requires a page reload to take effect.
    */
   injectLegacyApi: boolean;
+  /**
+   * When true (default), register the AIP-62 wallet as "Petra" so dApps
+   * that hard-allowlist wallet names (the common `optInWallets={['Petra']}`
+   * pattern) discover it.
+   *
+   * When false, register under the honest "View-Only Wallet" name. Safer
+   * for dApps that key internal state off the wallet name and might get
+   * confused if two "Petra"s appear. Changing this requires a page reload
+   * because wallet-standard caches by name.
+   */
+  impersonatePetra: boolean;
 }
 
 export interface LoggedPayload {
@@ -70,6 +81,7 @@ export const DEFAULT_STATE: WalletState = {
   chainId: 1,
   autoReject: true,
   injectLegacyApi: true,
+  impersonatePetra: true,
 };
 
 export const CHAIN_IDS: Record<WalletState["network"], number> = {

@@ -23,6 +23,7 @@ const addressInput = $<HTMLInputElement>("#address");
 const networkSelect = $<HTMLSelectElement>("#network");
 const autoRejectInput = $<HTMLInputElement>("#auto-reject");
 const injectLegacyInput = $<HTMLInputElement>("#inject-legacy");
+const impersonatePetraInput = $<HTMLInputElement>("#impersonate-petra");
 const saveBtn = $<HTMLButtonElement>("#save");
 const saveStatus = $<HTMLParagraphElement>("#save-status");
 const clearBtn = $<HTMLButtonElement>("#clear");
@@ -42,6 +43,7 @@ function renderState(state: WalletState) {
   networkSelect.value = state.network;
   autoRejectInput.checked = state.autoReject;
   injectLegacyInput.checked = state.injectLegacyApi;
+  impersonatePetraInput.checked = state.impersonatePetra;
 }
 
 function formatTime(ts: number): string {
@@ -105,9 +107,11 @@ saveBtn.addEventListener("click", async () => {
     chainId: CHAIN_IDS[network],
     autoReject: autoRejectInput.checked,
     injectLegacyApi: injectLegacyInput.checked,
+    impersonatePetra: impersonatePetraInput.checked,
   };
   await saveState(state);
   const modes = [
+    state.impersonatePetra ? "as Petra" : "as View-Only Wallet",
     state.autoReject ? "auto-reject ON" : "auto-reject OFF (⚠️ fake approvals)",
     state.injectLegacyApi ? "window.aptos ON" : "AIP-62 only",
   ].join(" · ");

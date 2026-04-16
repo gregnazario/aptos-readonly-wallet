@@ -19,10 +19,12 @@ Useful for:
 > Primary registration is done through `wallet-standard:register-wallet`,
 > the event the AIP-62 / `@aptos-labs/wallet-standard` package standardizes.
 >
-> **It registers itself as "Petra"** (not "View-Only Wallet") so dApps that
-> hard-allowlist wallet names — e.g. `optInWallets={['Petra']}` — still
-> surface it. The popup UI inside the extension remains labeled "View-Only
-> Wallet" so *you* always know what you're actually running.
+> **By default it registers itself as "Petra"** (not "View-Only Wallet") so
+> dApps that hard-allowlist wallet names — e.g. `optInWallets={['Petra']}`
+> — still surface it. You can flip a toggle in the popup to register under
+> the honest "View-Only Wallet" name + eye icon instead. The popup UI
+> inside the extension is always labeled "View-Only Wallet" so *you*
+> always know what you're actually running.
 >
 > **Legacy `window.aptos` / `window.petra` shim** (on by default) — some
 > dApps (Aries, Pontem UI, other older integrations) still predate AIP-62
@@ -130,7 +132,15 @@ Available scripts:
      post-signing UI flow. ⚠️ The outputs are invalid — nothing is ever on
      chain, and any `waitForTransaction(hash)` call on the dApp side will
      error.
-5. **Inject legacy `window.aptos` (Petra shim)** checkbox:
+5. **Register as Petra** checkbox:
+   - **On** (default): the AIP-62 wallet registers with `name: "Petra"`
+     and a Petra-style P icon. Required for dApps that allowlist wallets
+     by name.
+   - **Off**: registers with `name: "View-Only Wallet"` and a blue eye
+     icon. Honest, but dApps that filter on `"Petra"` won't see it.
+   - Changing this requires reloading the dApp tab because
+     `wallet-standard` caches wallets by name.
+6. **Inject legacy `window.aptos` (Petra shim)** checkbox:
    - **On** (default): in addition to AIP-62 registration, the extension
      installs a Petra-compatible shim on `window.aptos` and `window.petra`
      (only if those slots are free). This is what makes the wallet visible
@@ -140,7 +150,7 @@ Available scripts:
      Matches the original design intent — useful for verifying your dApp's
      AIP-62 integration doesn't secretly depend on the legacy API.
    - Changing this requires reloading the dApp tab.
-6. Click **Save**. You'll see a confirmation like `✓ Saved 0x0000000… · auto-reject ON · window.aptos ON`.
+7. Click **Save**. You'll see a confirmation like `✓ Saved 0x0000000… · as Petra · auto-reject ON · window.aptos ON`.
 
 You can come back to the popup at any time to change the address. The wallet
 fires `aptos:onAccountChange` automatically, so any dApp that's already
@@ -343,8 +353,9 @@ signatures.
 
 ## Troubleshooting
 
-**"Petra" doesn't show up in the dApp's wallet picker.**
-- Make sure you reloaded the dApp tab *after* loading the extension.
+**"Petra" / "View-Only Wallet" doesn't show up in the dApp's wallet picker.**
+- Make sure you reloaded the dApp tab *after* loading the extension (or
+  after toggling **Register as Petra** — wallet-standard caches by name).
 - Confirm the extension is enabled in `chrome://extensions`.
 - Open the page's devtools console on the dApp; you should see the wallet
   log its own registration noise when you trigger a transaction. If

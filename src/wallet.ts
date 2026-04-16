@@ -47,10 +47,30 @@ import {
  * The real Petra icon is proprietary; this is a plain approximation so
  * the impersonation is *identity*-level (name + url), not asset theft.
  */
-const ICON = ("data:image/svg+xml;base64," +
+const PETRA_ICON = ("data:image/svg+xml;base64," +
   btoa(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="#000"/><path d="M15 12h12c5 0 9 3.5 9 9s-4 9-9 9h-6v6h-6V12zm6 6v6h5c1.7 0 3-1.3 3-3s-1.3-3-3-3h-5z" fill="#fff"/></svg>`,
   )) as WalletIcon;
+
+/**
+ * Honest icon for "View-Only Wallet" mode: a blue rounded square with a
+ * white eye glyph. Visually signals "this is watching, not signing".
+ */
+const VIEW_ONLY_ICON = ("data:image/svg+xml;base64," +
+  btoa(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="#2563eb"/><path d="M24 14c-7 0-12.5 5.6-14 10 1.5 4.4 7 10 14 10s12.5-5.6 14-10c-1.5-4.4-7-10-14-10zm0 16a6 6 0 1 1 0-12 6 6 0 0 1 0 12zm0-9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" fill="#fff"/></svg>`,
+  )) as WalletIcon;
+
+const PETRA_IDENTITY = {
+  name: "Petra" as const,
+  url: "https://petra.app",
+  icon: PETRA_ICON,
+};
+const VIEW_ONLY_IDENTITY = {
+  name: "View-Only Wallet" as const,
+  url: "https://github.com/gregnazario/aptos-readonly-wallet",
+  icon: VIEW_ONLY_ICON,
+};
 
 /**
  * Stable dummy Ed25519 public key used as a placeholder for the account we
@@ -72,11 +92,11 @@ export class ViewOnlyWalletAccount implements AptosWalletAccount {
   readonly chains: AptosWalletAccount["chains"];
   readonly features: AptosWalletAccount["features"];
   readonly signingScheme = SigningScheme.Ed25519;
-  // Intentionally plain so the account row doesn't scream "fake" to the dApp.
-  readonly label = "Petra";
+  readonly label: string;
 
-  constructor(address: AccountAddress) {
+  constructor(address: AccountAddress, label: string) {
     this.address = address.toString();
+    this.label = label;
     this.publicKey = DUMMY_PUBKEY.toUint8Array();
     this.chains = APTOS_CHAINS;
     this.features = [
@@ -145,11 +165,12 @@ export interface ViewOnlyWalletBridge {
 
 export class ViewOnlyWallet implements AptosWallet {
   readonly version = "1.0.0" as const;
-  // Impersonates Petra so dApps that hard-allowlist wallet names (common
-  // pattern with `optInWallets={['Petra']}`) discover us.
-  readonly name = "Petra";
-  readonly url = "https://petra.app";
-  readonly icon = ICON;
+  // Identity (name / url / icon) is frozen from the initial state at
+  // registration time because wallet-standard caches wallets by name.
+  // Flipping `impersonatePetra` at runtime therefore requires a page reload.
+  readonly name: string;
+  readonly url: string;
+  readonly icon: WalletIcon;
   readonly chains = APTOS_CHAINS;
 
   private _state: WalletState;
@@ -161,6 +182,10 @@ export class ViewOnlyWallet implements AptosWallet {
 
   constructor(initialState: WalletState, bridge: ViewOnlyWalletBridge) {
     this._state = initialState;
+    const identity = initialState.impersonatePetra ? PETRA_IDENTITY : VIEW_ONLY_IDENTITY;
+    this.name = identity.name;
+    this.url = identity.url;
+    this.icon = identity.icon;
     this._bridge = bridge;
     this._bridge.onStateChanged((next) => this._applyState(next));
     this._rebuildAccount();
@@ -169,7 +194,7 @@ export class ViewOnlyWallet implements AptosWallet {
   private _rebuildAccount() {
     this._account =
       this._state.address != null
-        ? new ViewOnlyWalletAccount(AccountAddress.from(this._state.address))
+        ? new ViewOnlyWalletAccount(AccountAddress.from(this._state.address), this.name)
         : null;
   }
 

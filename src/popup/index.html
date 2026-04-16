@@ -47,6 +47,17 @@
         </label>
       </div>
       <div class="row toggle">
+        <input id="impersonate-petra" type="checkbox" checked />
+        <label for="impersonate-petra">
+          Register as <strong>Petra</strong> (vs. "View-Only Wallet")
+          <span class="hint">
+            On → dApps that allowlist Petra by name discover us. Off →
+            honest "View-Only Wallet" name + eye icon. Changing this
+            requires a page reload.
+          </span>
+        </label>
+      </div>
+      <div class="row toggle">
         <input id="inject-legacy" type="checkbox" checked />
         <label for="inject-legacy">
           Inject legacy <code>window.aptos</code> (Petra shim)
