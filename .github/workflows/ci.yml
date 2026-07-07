@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+# Least privilege: the job only needs to read the repo.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: typecheck · unit · build · e2e
+    runs-on: ubuntu-latest
+    env:
+      # Keep Safe Chain's malware-blocklist scanning, but disable its 48h
+      # "minimum package age" heuristic: our dev toolchain is pinned to the
+      # latest vitest/vite/playwright (freshly published), and the frozen
+      # lockfile already guarantees exact, reviewed versions.
+      SAFE_CHAIN_MINIMUM_PACKAGE_AGE_HOURS: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "20"
+
+      # Activates the pnpm version pinned in package.json's "packageManager".
+      - name: Enable corepack
+        run: corepack enable
+
+      # Blocks known-malicious packages during install (Aptos supply-chain policy).
+      - name: Aikido Safe Chain
+        uses: aptos-labs/actions/aikidosec-safe-chain@fdd3a3a628c840d5c35086a87e9cc3141b635505 # main
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build extension
+        run: pnpm build
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: E2E tests
+        run: pnpm test:e2e
+        # Skip the network-dependent live app.thala.fi smoke test in CI.
+        env:
+          VOW_E2E_SKIP_LIVE: "1"

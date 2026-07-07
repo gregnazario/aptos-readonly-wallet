@@ -1,0 +1,4 @@
+# pnpm 10 reads settings from here (the package.json "pnpm" field is ignored).
+# Keep transitive rollup at the audit-clean floor.
+overrides:
+  rollup@<2.80.0: ^2.80.0

@@ -50,6 +50,10 @@ const bridge: ViewOnlyWalletBridge = {
       window.postMessage(msg, window.location.origin);
     });
   },
+  persistNetwork(network, chainId) {
+    const msg: PageToContent = { tag: VOW_TAG, kind: "set-network", network, chainId };
+    window.postMessage(msg, window.location.origin);
+  },
 };
 
 // The wallet's identity (Petra vs. View-Only Wallet) is frozen at

@@ -35,7 +35,13 @@ export interface ApprovalRequest {
 export type PageToContent =
   | { tag: typeof VOW_TAG; kind: "get-state" }
   | { tag: typeof VOW_TAG; kind: "record-payload"; payload: LoggedPayload }
-  | { tag: typeof VOW_TAG; kind: "open-approval"; request: ApprovalRequest };
+  | { tag: typeof VOW_TAG; kind: "open-approval"; request: ApprovalRequest }
+  | {
+      tag: typeof VOW_TAG;
+      kind: "set-network";
+      network: WalletState["network"];
+      chainId: number;
+    };
 
 /** Messages flowing *from* the content script back into the page. */
 export type ContentToPage =

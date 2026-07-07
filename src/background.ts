@@ -131,6 +131,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // A dApp asked (via aptos:changeNetwork) to switch networks — persist it so
+  // the popup reflects it and every frame gets the state-changed broadcast.
+  if (msg.kind === "set-network") {
+    getState()
+      .then((s) =>
+        chrome.storage.local.set({
+          [STATE_KEY]: { ...s, network: msg.network, chainId: msg.chainId },
+        }),
+      )
+      .then(() => sendResponse({ ok: true }));
+    return true;
+  }
+
   if (msg.kind === "open-approval") {
     const tabId = sender.tab?.id;
     if (tabId == null) {

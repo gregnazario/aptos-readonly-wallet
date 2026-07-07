@@ -10,14 +10,42 @@ parsed nicely, with buttons to **copy / download the raw JSON** and to
 Accept just returns an all-zero dummy signature. You can also switch to
 "always reject" or "always accept" modes that skip the window.
 
-Useful for:
+In short: it turns any Aptos dApp into a **transaction-payload builder** that's
+decoupled from signing. You drive the dApp's real UI as any account, and instead
+of signing you get the exact payload — to inspect, to copy, or to execute with a
+different signer.
 
-- Previewing the full raw transaction a dApp is about to submit on your
-  behalf, and copying the payload to execute it elsewhere.
-- Debugging dApp integrations where you don't have (or don't want to give
-  up) the target account's private key.
-- Testing that your AIP-62 wallet-adapter integration handles rejected
-  signatures — and the post-signing success path — gracefully.
+## What it's for
+
+- **See exactly what a dApp will make you sign — before you sign it.** Connect
+  as your own address, click through the action, and read the fully-parsed
+  payload (function, type args, arguments, fee payer, secondary signers). Catch
+  a drainer, a wrong recipient, or a buggy amount while your real keys are still
+  nowhere near the page.
+
+- **Build in a dApp, sign somewhere safer.** The payload is one click to copy or
+  download as JSON, so a dApp UI becomes a transaction *builder* for a signer it
+  never sees: the [Aptos CLI](https://aptos.dev/tools/aptos-cli), the TS SDK, a
+  **multisig / governance** proposal, or an **air-gapped / cold** wallet. Great
+  when the account that should sign can't (or shouldn't) be pasted into a browser.
+
+- **Impersonate any address to debug or investigate.** No private key required —
+  connect as any account to reproduce a user's bug, see what a treasury / whale /
+  multisig would actually submit, or QA account-specific UI you don't hold keys
+  for.
+
+- **Test your dApp's wallet integration end to end.** As a dApp developer, verify
+  your app handles user **rejection**, the **post-signing success path** (Simulate
+  Accept), **account / network changes**, and advanced transactions —
+  **multi-agent**, **sponsored / fee-payer**, **orderless**, and **sign-message** —
+  and that it doesn't secretly depend on the legacy `window.aptos` API.
+
+- **Keep an audit trail.** Every intercepted request is logged with its origin and
+  timestamp, browsable and exportable from the full-page history view.
+
+> ⚠️ Nothing is ever signed or submitted on-chain. "Simulate Accept" returns an
+> all-zero dummy signature so a dApp's success path can run, but that response is
+> invalid — use the captured payload with a real signer to actually execute.
 
 > Primary registration is done through `wallet-standard:register-wallet`,
 > the event the AIP-62 / `@aptos-labs/wallet-standard` package standardizes.
@@ -41,6 +69,7 @@ Useful for:
 
 ## Table of contents
 
+- [What it's for](#what-its-for)
 - [Prerequisites](#prerequisites)
 - [Install & build](#install--build)
 - [Load the extension in Chrome](#load-the-extension-in-chrome)
@@ -365,13 +394,16 @@ Files you're most likely to edit:
   View-Only Wallet — since `wallet-standard` caches wallets by name and can't
   rename them afterward. wallet-standard's late-registration path re-announces
   the wallet to dApps that are already listening.
-- **`src/wallet.ts`** implements every required AIP-62 feature
-  (`aptos:connect`, `aptos:disconnect`, `aptos:account`, `aptos:network`,
-  `aptos:onAccountChange`, `aptos:onNetworkChange`, `aptos:signTransaction`,
+- **`src/wallet.ts`** implements every required AIP-62 feature plus
+  `aptos:changeNetwork` (`aptos:connect`, `aptos:disconnect`, `aptos:account`,
+  `aptos:network`, `aptos:onAccountChange`, `aptos:onNetworkChange`,
+  `aptos:changeNetwork`, `aptos:signTransaction`,
   `aptos:signAndSubmitTransaction`, `aptos:signMessage`). Signing methods
   pretty-print the payload, then resolve per `responseMode`: instant
   reject/accept, or — in "prompt" mode — await the user's decision from the
-  approval window before returning.
+  approval window before returning. `changeNetwork` switches the reported
+  network (persisting it so the popup and `onNetworkChange` subscribers
+  follow).
 - **`src/content.ts`** bridges MAIN ↔ service worker via
   `window.postMessage` ↔ `chrome.runtime.sendMessage`, and relays approval
   decisions from the background back into the page.
@@ -406,11 +438,20 @@ button you click (or the "reject" column if you close the window).
 | `aptos:account`                   | Returns the current `AccountInfo`.                                        | _(same)_                                                                              |
 | `aptos:network`                   | Returns the selected `NetworkInfo` (name + chainId).                      | _(same)_                                                                              |
 | `aptos:onAccountChange`           | Registers a callback; fires when you change address in the popup.         | _(same)_                                                                              |
-| `aptos:onNetworkChange`           | Registers a callback; fires when you change network in the popup.         | _(same)_                                                                              |
+| `aptos:onNetworkChange`           | Registers a callback; fires when you change network (popup or `changeNetwork`). | _(same)_                                                                        |
+| `aptos:changeNetwork`             | Switches + persists the reported network, returns `{ success: true }` (never prompts). | _(same)_                                                              |
 | `aptos:signAndSubmitTransaction`  | Logs payload, returns `REJECTED`.                                         | Logs payload, returns `APPROVED` with `hash = 0x0…0`.                                 |
 | `aptos:signTransaction` (v1.0)    | Logs payload, returns `REJECTED`.                                         | Logs payload, returns `APPROVED` with an all-zero `AccountAuthenticatorEd25519`.      |
 | `aptos:signTransaction` (v1.1)    | Logs payload, returns `REJECTED`.                                         | Logs payload, returns `APPROVED` with `{ authenticator, rawTransaction }` (both dummy). |
 | `aptos:signMessage`               | Logs input, returns `REJECTED`.                                           | Logs input, returns `APPROVED` with an all-zero `Ed25519Signature` + full `APTOS…` envelope. |
+
+**Advanced transaction types.** `signTransaction` accepts the full AIP-62 v1.1
+input, so **multi-agent** (secondary signers), **sponsored / fee-payer**, and
+**orderless** (replay-protection nonce) transactions all work: they're captured
+in full and the approval window / log surface the sender, fee payer, secondary
+signers, sequence number, and orderless nonce as parsed fields. A view-only
+wallet returns one dummy `AccountAuthenticator` per signer (as each signer
+would), so the output shape is correct even though the signature is all-zero.
 
 ---
 
@@ -478,15 +519,17 @@ signatures.
 
 ## Caveats
 
-- By default, returns `REJECTED` for every signing request. This is a
-  correct status in the standard, but if a dApp treats "rejected" as "fatal
-  error" it will surface an error UI. Toggle **Auto-reject** off in the
-  popup if you need the dApp to see an `APPROVED` response — note that the
-  signatures and hash produced are all-zero dummies and will not round-trip
-  through the chain.
+- Any "approved" response is a fake. Simulate Accept returns all-zero dummy
+  signatures / a zero hash so a dApp's success path runs, but nothing is on
+  chain — a dApp that then calls `waitForTransaction(hash)` will error. Use
+  the captured payload with a real signer to actually execute.
+- In "Always reject" mode the wallet returns `REJECTED`, which is a correct
+  status in the standard — but a dApp that treats "rejected" as a fatal error
+  will surface an error UI. Use "Ask me" or "Always accept" if you need the
+  dApp to see an `APPROVED` response.
 - No simulated-transaction support. The payload is recorded as-is; the
   wallet does not call `aptos.transaction.simulate` for you.
 - Firefox is not supported yet — MV3 content-script `world: "MAIN"` ships
   in Firefox 128+, and this extension hasn't been tested there. PRs welcome.
-- The Aptos SDK is bundled at ~900 KB (~520 KB gzipped). Loaded lazily via
-  dynamic import, so the inject entry itself is only ~7 KB.
+- The Aptos SDK (~900 KB, ~520 KB gzipped) is bundled into a separate chunk
+  and loaded with the MAIN-world content script on every page.

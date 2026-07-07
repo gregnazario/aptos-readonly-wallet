@@ -55,6 +55,16 @@ window.addEventListener("message", (event: MessageEvent) => {
     });
     return;
   }
+
+  if (data.kind === "set-network") {
+    chrome.runtime.sendMessage({
+      tag: VOW_TAG,
+      kind: "set-network",
+      network: data.network,
+      chainId: data.chainId,
+    });
+    return;
+  }
 });
 
 // Decision routed back from the background (via chrome.tabs.sendMessage to
