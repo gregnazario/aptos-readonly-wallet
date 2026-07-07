@@ -62,6 +62,20 @@
             return { name: String(net.name), chainId: net.chainId };
           },
 
+          async changeNetwork(name, networkName, chainId) {
+            const f = find(name).features["aptos:changeNetwork"];
+            if (!f) return { error: "unsupported" };
+            const res = await f.changeNetwork({ name: networkName, chainId });
+            return { status: res.status, success: res.args ? res.args.success : null };
+          },
+
+          async signTransaction(name, input) {
+            const res = await find(name).features["aptos:signTransaction"].signTransaction(
+              input,
+            );
+            return { status: res.status, hasAuth: !!res.args };
+          },
+
           async signAndSubmit(name, payload) {
             const res = await find(name).features[
               "aptos:signAndSubmitTransaction"

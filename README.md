@@ -365,13 +365,16 @@ Files you're most likely to edit:
   View-Only Wallet — since `wallet-standard` caches wallets by name and can't
   rename them afterward. wallet-standard's late-registration path re-announces
   the wallet to dApps that are already listening.
-- **`src/wallet.ts`** implements every required AIP-62 feature
-  (`aptos:connect`, `aptos:disconnect`, `aptos:account`, `aptos:network`,
-  `aptos:onAccountChange`, `aptos:onNetworkChange`, `aptos:signTransaction`,
+- **`src/wallet.ts`** implements every required AIP-62 feature plus
+  `aptos:changeNetwork` (`aptos:connect`, `aptos:disconnect`, `aptos:account`,
+  `aptos:network`, `aptos:onAccountChange`, `aptos:onNetworkChange`,
+  `aptos:changeNetwork`, `aptos:signTransaction`,
   `aptos:signAndSubmitTransaction`, `aptos:signMessage`). Signing methods
   pretty-print the payload, then resolve per `responseMode`: instant
   reject/accept, or — in "prompt" mode — await the user's decision from the
-  approval window before returning.
+  approval window before returning. `changeNetwork` switches the reported
+  network (persisting it so the popup and `onNetworkChange` subscribers
+  follow).
 - **`src/content.ts`** bridges MAIN ↔ service worker via
   `window.postMessage` ↔ `chrome.runtime.sendMessage`, and relays approval
   decisions from the background back into the page.
@@ -406,11 +409,20 @@ button you click (or the "reject" column if you close the window).
 | `aptos:account`                   | Returns the current `AccountInfo`.                                        | _(same)_                                                                              |
 | `aptos:network`                   | Returns the selected `NetworkInfo` (name + chainId).                      | _(same)_                                                                              |
 | `aptos:onAccountChange`           | Registers a callback; fires when you change address in the popup.         | _(same)_                                                                              |
-| `aptos:onNetworkChange`           | Registers a callback; fires when you change network in the popup.         | _(same)_                                                                              |
+| `aptos:onNetworkChange`           | Registers a callback; fires when you change network (popup or `changeNetwork`). | _(same)_                                                                        |
+| `aptos:changeNetwork`             | Switches + persists the reported network, returns `{ success: true }` (never prompts). | _(same)_                                                              |
 | `aptos:signAndSubmitTransaction`  | Logs payload, returns `REJECTED`.                                         | Logs payload, returns `APPROVED` with `hash = 0x0…0`.                                 |
 | `aptos:signTransaction` (v1.0)    | Logs payload, returns `REJECTED`.                                         | Logs payload, returns `APPROVED` with an all-zero `AccountAuthenticatorEd25519`.      |
 | `aptos:signTransaction` (v1.1)    | Logs payload, returns `REJECTED`.                                         | Logs payload, returns `APPROVED` with `{ authenticator, rawTransaction }` (both dummy). |
 | `aptos:signMessage`               | Logs input, returns `REJECTED`.                                           | Logs input, returns `APPROVED` with an all-zero `Ed25519Signature` + full `APTOS…` envelope. |
+
+**Advanced transaction types.** `signTransaction` accepts the full AIP-62 v1.1
+input, so **multi-agent** (secondary signers), **sponsored / fee-payer**, and
+**orderless** (replay-protection nonce) transactions all work: they're captured
+in full and the approval window / log surface the sender, fee payer, secondary
+signers, sequence number, and orderless nonce as parsed fields. A view-only
+wallet returns one dummy `AccountAuthenticator` per signer (as each signer
+would), so the output shape is correct even though the signature is all-zero.
 
 ---
 

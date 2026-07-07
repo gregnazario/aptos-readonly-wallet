@@ -109,6 +109,7 @@ export class ViewOnlyWalletAccount implements AptosWalletAccount {
       "aptos:network",
       "aptos:onAccountChange",
       "aptos:onNetworkChange",
+      "aptos:changeNetwork",
       "aptos:signTransaction",
       "aptos:signAndSubmitTransaction",
       "aptos:signMessage",
@@ -132,6 +133,33 @@ function stateToNetworkInfo(state: WalletState): NetworkInfo {
   };
 }
 
+/** SDK Network enum ("local") ↔ our state's network union ("localnet"). */
+const NETWORK_NAME_MAP: Record<string, WalletState["network"]> = {
+  mainnet: "mainnet",
+  testnet: "testnet",
+  devnet: "devnet",
+  local: "localnet",
+  localnet: "localnet",
+};
+
+/**
+ * Resolve a dApp-requested `changeNetwork` into our constrained state. Prefers
+ * the name; falls back to a reverse chain-id lookup; defaults to mainnet.
+ */
+function resolveNetwork(
+  name: unknown,
+  chainId: unknown,
+): { network: WalletState["network"]; chainId: number } {
+  const byName = typeof name === "string" ? NETWORK_NAME_MAP[name.toLowerCase()] : undefined;
+  const cid = typeof chainId === "number" ? chainId : undefined;
+  if (byName) return { network: byName, chainId: cid ?? CHAIN_IDS[byName] };
+  const entry = (Object.entries(CHAIN_IDS) as [WalletState["network"], number][]).find(
+    ([, id]) => id === cid,
+  );
+  if (entry) return { network: entry[0], chainId: cid as number };
+  return { network: "mainnet", chainId: cid ?? 1 };
+}
+
 export interface ViewOnlyWalletBridge {
   /** Fires when the user changes the impersonated address via the popup. */
   onStateChanged(cb: (state: WalletState) => void): void;
@@ -139,6 +167,8 @@ export interface ViewOnlyWalletBridge {
   recordPayload(p: LoggedPayload): void;
   /** Open the approval window and resolve with the user's decision. */
   requestDecision(request: ApprovalRequest): Promise<Decision>;
+  /** Persist a dApp-requested network change to storage. */
+  persistNetwork(network: WalletState["network"], chainId: number): void;
 }
 
 export class ViewOnlyWallet implements AptosWallet {
@@ -318,6 +348,30 @@ export class ViewOnlyWallet implements AptosWallet {
       onNetworkChange: async (cb) => {
         this._logCall("onNetworkChange");
         this._networkChangeCbs.add(cb);
+      },
+    },
+    "aptos:changeNetwork": {
+      version: "1.0.0",
+      changeNetwork: async (
+        input,
+      ): Promise<UserResponse<{ success: boolean; reason?: string }>> => {
+        this._logCall("changeNetwork", input);
+        const resolved = resolveNetwork(
+          (input as { name?: unknown }).name,
+          (input as { chainId?: unknown }).chainId,
+        );
+        const changed =
+          resolved.network !== this._state.network ||
+          resolved.chainId !== this._state.chainId;
+        // Update in-memory first so the storage round-trip's state-changed
+        // (same values) is a no-op and doesn't double-fire onNetworkChange.
+        this._state = { ...this._state, network: resolved.network, chainId: resolved.chainId };
+        if (changed) {
+          const info = stateToNetworkInfo(this._state);
+          for (const cb of this._networkChangeCbs) cb(info);
+        }
+        this._bridge.persistNetwork(resolved.network, resolved.chainId);
+        return { status: UserResponseStatus.APPROVED, args: { success: true } };
       },
     },
     "aptos:signTransaction": {

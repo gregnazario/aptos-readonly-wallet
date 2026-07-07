@@ -51,8 +51,42 @@ export function parsePayload(kind: LoggedPayload["kind"], pretty: string): Parse
       value: args.map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a))).join("\n"),
     });
   }
-  if (obj?.asFeePayer === true) fields.push({ label: "Fee payer", value: "true" });
+
+  // Advanced transaction attributes (multi-agent / sponsored / orderless).
+  if (obj?.sender) fields.push({ label: "Sender", value: addrOf(obj.sender) });
+  if (obj?.feePayer) {
+    fields.push({ label: "Fee payer (sponsored)", value: addrOf(obj.feePayer) });
+  }
+  if (obj?.asFeePayer === true || obj?.withFeePayer === true) {
+    fields.push({ label: "Signing as", value: "fee payer (sponsored)" });
+  }
+  const secondary = obj?.secondarySigners ?? obj?.secondarySignerAddresses;
+  if (Array.isArray(secondary) && secondary.length) {
+    fields.push({
+      label: `Secondary signers (multi-agent, ${secondary.length})`,
+      value: secondary.map(addrOf).join("\n"),
+    });
+  }
+  const opts = body?.options ?? obj?.options ?? {};
+  const nonce = opts.replayProtectionNonce ?? opts.replay_protection_nonce;
+  if (nonce != null) {
+    fields.push({ label: "Orderless (replay nonce)", value: String(nonce) });
+  }
+  if (obj?.sequenceNumber != null) {
+    fields.push({ label: "Sequence #", value: String(obj.sequenceNumber) });
+  }
+  if (obj?.network) fields.push({ label: "Network", value: String(obj.network) });
   return { fields, raw: pretty };
+}
+
+/** Extract an address from a string, an `{ address }`, or fall back to JSON. */
+function addrOf(x: unknown): string {
+  if (x == null) return "";
+  if (typeof x === "string") return x;
+  if (typeof x === "object" && typeof (x as { address?: unknown }).address === "string") {
+    return (x as { address: string }).address;
+  }
+  return JSON.stringify(x);
 }
 
 export function button(

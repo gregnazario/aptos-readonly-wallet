@@ -27,6 +27,7 @@ function makeBridge() {
   let stateCb: ((s: WalletState) => void) | undefined;
   const recorded: LoggedPayload[] = [];
   const decisionRequests: ApprovalRequest[] = [];
+  const networkPersists: Array<{ network: WalletState["network"]; chainId: number }> = [];
   let answer: Decision = "reject";
   const bridge: ViewOnlyWalletBridge = {
     onStateChanged(cb) {
@@ -39,11 +40,15 @@ function makeBridge() {
       decisionRequests.push(req);
       return Promise.resolve(answer);
     },
+    persistNetwork(network, chainId) {
+      networkPersists.push({ network, chainId });
+    },
   };
   return {
     bridge,
     recorded,
     decisionRequests,
+    networkPersists,
     setDecision(d: Decision) {
       answer = d;
     },
@@ -249,6 +254,78 @@ describe("signing — responseMode 'prompt' (approval window)", () => {
       nonce: "1",
     });
     expect(res.status).toBe(UserResponseStatus.REJECTED);
+  });
+});
+
+describe("changeNetwork", () => {
+  it("switches network, fires onNetworkChange, persists, and reports success", async () => {
+    const { wallet, networkPersists } = makeWallet({ network: "mainnet", chainId: 1 });
+    const cb = vi.fn();
+    await wallet.features["aptos:onNetworkChange"].onNetworkChange(cb);
+
+    const res = await wallet.features["aptos:changeNetwork"]!.changeNetwork({
+      name: "testnet",
+      chainId: 2,
+    });
+    expect(res.status).toBe(UserResponseStatus.APPROVED);
+    if (res.status !== UserResponseStatus.APPROVED) throw new Error("unreachable");
+    expect(res.args.success).toBe(true);
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(networkPersists).toEqual([{ network: "testnet", chainId: 2 }]);
+
+    const net = await wallet.features["aptos:network"].network();
+    expect(net.chainId).toBe(2);
+  });
+
+  it("maps the SDK 'local' network to our 'localnet'", async () => {
+    const { wallet, networkPersists } = makeWallet();
+    await wallet.features["aptos:changeNetwork"]!.changeNetwork({ name: "local", chainId: 4 });
+    expect(networkPersists[0]).toEqual({ network: "localnet", chainId: 4 });
+  });
+
+  it("does not fire onNetworkChange when already on that network", async () => {
+    const { wallet } = makeWallet({ network: "mainnet", chainId: 1 });
+    const cb = vi.fn();
+    await wallet.features["aptos:onNetworkChange"].onNetworkChange(cb);
+    await wallet.features["aptos:changeNetwork"]!.changeNetwork({ name: "mainnet", chainId: 1 });
+    expect(cb).not.toHaveBeenCalled();
+  });
+});
+
+describe("advanced transaction shapes (multi-agent / sponsored / orderless)", () => {
+  const signTx = (wallet: ViewOnlyWallet, input: unknown) =>
+    (wallet.features["aptos:signTransaction"].signTransaction as never as
+      (a: unknown) => Promise<{ status: UserResponseStatus; args: Record<string, unknown> }>)(input);
+
+  it("captures a sponsored (fee-payer) transaction and returns authenticator + rawTransaction", async () => {
+    const { wallet, recorded } = makeWallet({ responseMode: "accept" });
+    const res = await signTx(wallet, {
+      payload: { function: "0x1::coin::transfer", functionArguments: ["0x2", 1] },
+      feePayer: { address: "0xfeepayer" },
+    });
+    expect(res.status).toBe(UserResponseStatus.APPROVED);
+    expect(res.args.authenticator).toBeInstanceOf(AccountAuthenticatorEd25519);
+    expect(res.args.rawTransaction).toBeTruthy();
+    expect(recorded[0]!.pretty).toContain("0xfeepayer");
+  });
+
+  it("captures a multi-agent transaction's secondary signers", async () => {
+    const { wallet, recorded } = makeWallet({ responseMode: "accept" });
+    const res = await signTx(wallet, {
+      payload: { function: "0x1::x::y" },
+      secondarySigners: [{ address: "0xsecondary1" }, { address: "0xsecondary2" }],
+    });
+    expect(res.status).toBe(UserResponseStatus.APPROVED);
+    expect(recorded[0]!.pretty).toContain("0xsecondary1");
+    expect(recorded[0]!.pretty).toContain("0xsecondary2");
+  });
+
+  it("captures an orderless transaction's replay-protection nonce", async () => {
+    const { wallet, recorded } = makeWallet({ responseMode: "reject" });
+    await wallet.features["aptos:signAndSubmitTransaction"].signAndSubmitTransaction({
+      payload: { function: "0x1::x::y", options: { replayProtectionNonce: "987654321" } },
+    } as never);
+    expect(recorded[0]!.pretty).toContain("987654321");
   });
 });
 

@@ -12,10 +12,19 @@ declare global {
         name: string,
       ) => Promise<{ status: string; address: string | null; publicKey: string | null }>;
       network: (name: string) => Promise<{ name: string; chainId: number }>;
+      changeNetwork: (
+        name: string,
+        networkName: string,
+        chainId: number,
+      ) => Promise<{ status?: string; success?: boolean | null; error?: string }>;
       signAndSubmit: (
         name: string,
         payload: unknown,
       ) => Promise<{ status: string; hash: string | null }>;
+      signTransaction: (
+        name: string,
+        input: unknown,
+      ) => Promise<{ status: string; hasAuth: boolean }>;
       signMessage: (
         name: string,
         input: unknown,
