@@ -38,7 +38,19 @@ header h1 {
   gap: 6px;
 }
 header .sub { margin: 0 0 12px; color: var(--muted); font-size: 11px; }
-header .eye { font-size: 18px; }
+header .eye { width: 20px; height: 20px; border-radius: 5px; }
+
+/* Standalone hint (not inside a toggle row). */
+.hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.hint code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+}
+.row.between .actions { display: flex; gap: 12px; }
 
 .card {
   background: var(--card);
@@ -129,6 +141,36 @@ button.link {
   max-height: 160px;
   overflow: auto;
 }
+
+/* Shared parsed-payload components (also used by approval + history). */
+.vow-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 10px;
+  margin: 4px 0;
+}
+.vow-fields dt { color: var(--muted); font-weight: 600; }
+.vow-fields dd {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.vow-muted { color: var(--muted); grid-column: 1 / -1; margin: 0; }
+.log details summary { cursor: pointer; color: var(--muted); margin-top: 4px; }
+.entry-actions { display: flex; gap: 6px; margin: 6px 0; }
+.vow-btn {
+  margin: 0;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.vow-btn:hover { filter: brightness(1.05); }
 
 footer {
   text-align: center;

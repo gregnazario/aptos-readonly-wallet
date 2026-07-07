@@ -31,7 +31,7 @@ test.describe("live smoke: app.thala.fi", () => {
     setWalletState,
     getPayloads,
   }) => {
-    await setWalletState({ address: IMPERSONATED, network: "mainnet", autoReject: true });
+    await setWalletState({ address: IMPERSONATED, network: "mainnet", responseMode: "reject" });
 
     const page = await context.newPage();
     try {

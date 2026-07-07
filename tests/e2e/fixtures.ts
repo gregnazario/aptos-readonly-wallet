@@ -19,7 +19,8 @@ export interface WalletStateInput {
   address: string | null;
   network?: "mainnet" | "testnet" | "devnet" | "localnet";
   chainId?: number;
-  autoReject?: boolean;
+  /** Defaults to "reject" so tests that don't opt into prompting never block. */
+  responseMode?: "prompt" | "accept" | "reject";
   injectLegacyApi?: boolean;
   impersonatePetra?: boolean;
 }
@@ -71,7 +72,7 @@ export const test = base.extend<{
         address: s.address,
         network,
         chainId: s.chainId ?? CHAIN_IDS[network],
-        autoReject: s.autoReject ?? true,
+        responseMode: s.responseMode ?? "reject",
         injectLegacyApi: s.injectLegacyApi ?? true,
         impersonatePetra: s.impersonatePetra ?? true,
       };

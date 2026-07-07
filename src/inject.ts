@@ -15,8 +15,10 @@
 import { registerWallet } from "@aptos-labs/wallet-standard";
 import { LegacyPetraAPI } from "./legacy-api";
 import {
+  type ApprovalRequest,
   DEFAULT_STATE,
   type ContentToPage,
+  type Decision,
   type LoggedPayload,
   type PageToContent,
   VOW_TAG,
@@ -28,6 +30,11 @@ type StateListener = (s: WalletState) => void;
 const listeners = new Set<StateListener>();
 let currentState: WalletState = DEFAULT_STATE;
 
+// Signing requests awaiting a decision from the approval window, keyed by
+// request id. Resolved when a "decision" message arrives from the ISOLATED
+// content script.
+const pendingDecisions = new Map<string, (d: Decision) => void>();
+
 const bridge: ViewOnlyWalletBridge = {
   onStateChanged(cb) {
     listeners.add(cb);
@@ -35,6 +42,13 @@ const bridge: ViewOnlyWalletBridge = {
   recordPayload(p: LoggedPayload) {
     const msg: PageToContent = { tag: VOW_TAG, kind: "record-payload", payload: p };
     window.postMessage(msg, window.location.origin);
+  },
+  requestDecision(request: ApprovalRequest) {
+    return new Promise<Decision>((resolve) => {
+      pendingDecisions.set(request.id, resolve);
+      const msg: PageToContent = { tag: VOW_TAG, kind: "open-approval", request };
+      window.postMessage(msg, window.location.origin);
+    });
   },
 };
 
@@ -90,6 +104,15 @@ window.addEventListener("message", (event: MessageEvent) => {
     }
     currentState = data.state;
     for (const cb of listeners) cb(data.state);
+    return;
+  }
+
+  if (data.kind === "decision") {
+    const resolve = pendingDecisions.get(data.id);
+    if (resolve) {
+      pendingDecisions.delete(data.id);
+      resolve(data.decision);
+    }
   }
 });
 
@@ -109,6 +132,7 @@ function installLegacyApi() {
     getState: () => currentState,
     recordPayload: bridge.recordPayload,
     onStateChanged: (cb) => listeners.add(cb),
+    requestDecision: bridge.requestDecision,
   });
   const w = window as unknown as { aptos?: unknown; petra?: unknown };
   // Don't clobber a real Petra install. If the slot's free, claim it.

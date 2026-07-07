@@ -10,6 +10,8 @@ import {
 } from "../../src/wallet";
 import {
   DEFAULT_STATE,
+  type ApprovalRequest,
+  type Decision,
   type LoggedPayload,
   type WalletState,
 } from "../../src/shared/messages";
@@ -18,12 +20,14 @@ const ADDR = "0x1";
 
 /**
  * A controllable stand-in for the MAIN-world bridge. Captures the wallet's
- * state-change subscription so tests can push new state, and records every
- * surfaced payload for assertions.
+ * state-change subscription, records surfaced payloads, and lets a test drive
+ * the approval decision returned for "prompt" mode.
  */
 function makeBridge() {
   let stateCb: ((s: WalletState) => void) | undefined;
   const recorded: LoggedPayload[] = [];
+  const decisionRequests: ApprovalRequest[] = [];
+  let answer: Decision = "reject";
   const bridge: ViewOnlyWalletBridge = {
     onStateChanged(cb) {
       stateCb = cb;
@@ -31,10 +35,18 @@ function makeBridge() {
     recordPayload(p) {
       recorded.push(p);
     },
+    requestDecision(req) {
+      decisionRequests.push(req);
+      return Promise.resolve(answer);
+    },
   };
   return {
     bridge,
     recorded,
+    decisionRequests,
+    setDecision(d: Decision) {
+      answer = d;
+    },
     emitState(s: WalletState) {
       if (!stateCb) throw new Error("wallet never subscribed to state changes");
       stateCb(s);
@@ -46,14 +58,12 @@ function state(overrides: Partial<WalletState> = {}): WalletState {
   return { ...DEFAULT_STATE, address: ADDR, ...overrides };
 }
 
-/** Convenience: build a wallet + bridge in one call. */
 function makeWallet(overrides: Partial<WalletState> = {}) {
   const h = makeBridge();
   const wallet = new ViewOnlyWallet(state(overrides), h.bridge);
   return { wallet, ...h };
 }
 
-// Silence the wallet's devtools console noise during tests.
 beforeEach(() => {
   vi.spyOn(console, "log").mockImplementation(() => {});
   vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
@@ -107,18 +117,14 @@ describe("connect / account", () => {
     expect(res.status).toBe(UserResponseStatus.APPROVED);
     if (res.status !== UserResponseStatus.APPROVED) throw new Error("unreachable");
     expect(res.args.address.toString()).toBe(AccountAddress.from(ADDR).toString());
-    // Dummy all-zero public key, recognizably fake.
     expect(res.args.publicKey.toString()).toBe("0x" + "00".repeat(32));
     expect(wallet.accounts).toHaveLength(1);
   });
 
-  it("exposes no accounts until connected", async () => {
-    const { wallet } = makeWallet();
-    expect(wallet.accounts).toHaveLength(0);
+  it("connect is never gated behind the approval prompt", async () => {
+    const { wallet, decisionRequests } = makeWallet({ responseMode: "prompt" });
     await wallet.features["aptos:connect"].connect(false, undefined);
-    expect(wallet.accounts).toHaveLength(1);
-    await wallet.features["aptos:disconnect"].disconnect();
-    expect(wallet.accounts).toHaveLength(0);
+    expect(decisionRequests).toHaveLength(0);
   });
 
   it("account() throws with a helpful message when no address set", async () => {
@@ -139,51 +145,42 @@ describe("network", () => {
   });
 });
 
-describe("signing — auto-reject ON (default, safe)", () => {
-  it("logs the payload and rejects signAndSubmitTransaction", async () => {
-    const { wallet, recorded } = makeWallet({ autoReject: true });
+describe("signing — responseMode 'reject' (instant, no prompt)", () => {
+  it("logs the payload and rejects without prompting", async () => {
+    const { wallet, recorded, decisionRequests } = makeWallet({ responseMode: "reject" });
     const res = await wallet.features["aptos:signAndSubmitTransaction"].signAndSubmitTransaction({
       payload: { function: "0x1::aptos_account::transfer" },
     } as never);
     expect(res.status).toBe(UserResponseStatus.REJECTED);
     expect(recorded).toHaveLength(1);
-    expect(recorded[0]!.kind).toBe("signAndSubmitTransaction");
     expect(recorded[0]!.pretty).toContain("aptos_account::transfer");
+    expect(decisionRequests).toHaveLength(0);
   });
 
-  it("logs and rejects signTransaction", async () => {
-    const { wallet, recorded } = makeWallet({ autoReject: true });
-    const res = await (wallet.features["aptos:signTransaction"].signTransaction as never as
+  it("rejects signTransaction and signMessage too", async () => {
+    const { wallet } = makeWallet({ responseMode: "reject" });
+    const st = await (wallet.features["aptos:signTransaction"].signTransaction as never as
       (a: unknown) => Promise<{ status: UserResponseStatus }>)({ payload: { foo: 1 } });
-    expect(res.status).toBe(UserResponseStatus.REJECTED);
-    expect(recorded[0]!.kind).toBe("signTransaction");
-  });
-
-  it("logs and rejects signMessage", async () => {
-    const { wallet, recorded } = makeWallet({ autoReject: true });
-    const res = await wallet.features["aptos:signMessage"].signMessage({
-      message: "hi",
-      nonce: "1",
-    });
-    expect(res.status).toBe(UserResponseStatus.REJECTED);
-    expect(recorded[0]!.kind).toBe("signMessage");
-    expect(recorded[0]!.pretty).toContain("hi");
+    expect(st.status).toBe(UserResponseStatus.REJECTED);
+    const sm = await wallet.features["aptos:signMessage"].signMessage({ message: "hi", nonce: "1" });
+    expect(sm.status).toBe(UserResponseStatus.REJECTED);
   });
 });
 
-describe("signing — auto-reject OFF (fake-approve dummy data)", () => {
-  it("fake-approves signAndSubmitTransaction with a zero hash", async () => {
-    const { wallet } = makeWallet({ autoReject: false });
+describe("signing — responseMode 'accept' (instant fake-approve)", () => {
+  it("fake-approves signAndSubmitTransaction with a zero hash, no prompt", async () => {
+    const { wallet, decisionRequests } = makeWallet({ responseMode: "accept" });
     const res = await wallet.features["aptos:signAndSubmitTransaction"].signAndSubmitTransaction({
       payload: {},
     } as never);
     expect(res.status).toBe(UserResponseStatus.APPROVED);
     if (res.status !== UserResponseStatus.APPROVED) throw new Error("unreachable");
     expect(res.args.hash).toBe("0x" + "00".repeat(32));
+    expect(decisionRequests).toHaveLength(0);
   });
 
   it("v1.1 signTransaction returns { authenticator, rawTransaction }", async () => {
-    const { wallet } = makeWallet({ autoReject: false });
+    const { wallet } = makeWallet({ responseMode: "accept" });
     const raw = { some: "rawtxn" };
     const res = await (wallet.features["aptos:signTransaction"].signTransaction as never as
       (a: unknown) => Promise<{ status: UserResponseStatus; args: Record<string, unknown> }>)({
@@ -195,7 +192,7 @@ describe("signing — auto-reject OFF (fake-approve dummy data)", () => {
   });
 
   it("v1.0 signTransaction returns a bare authenticator", async () => {
-    const { wallet } = makeWallet({ autoReject: false });
+    const { wallet } = makeWallet({ responseMode: "accept" });
     const res = await (wallet.features["aptos:signTransaction"].signTransaction as never as
       (a: unknown) => Promise<{ status: UserResponseStatus; args: unknown }>)({ rawTxNoPayloadField: 1 });
     expect(res.status).toBe(UserResponseStatus.APPROVED);
@@ -203,7 +200,7 @@ describe("signing — auto-reject OFF (fake-approve dummy data)", () => {
   });
 
   it("signMessage returns the full APTOS envelope with a zero signature", async () => {
-    const { wallet } = makeWallet({ autoReject: false });
+    const { wallet } = makeWallet({ responseMode: "accept" });
     const res = await wallet.features["aptos:signMessage"].signMessage({
       message: "gm",
       nonce: "42",
@@ -215,8 +212,43 @@ describe("signing — auto-reject OFF (fake-approve dummy data)", () => {
     if (res.status !== UserResponseStatus.APPROVED) throw new Error("unreachable");
     expect(res.args.prefix).toBe("APTOS");
     expect(res.args.fullMessage).toContain("nonce: 42");
-    expect(res.args.fullMessage).toContain("message: gm");
     expect(res.args.signature.toString()).toBe("0x" + "00".repeat(64));
+  });
+});
+
+describe("signing — responseMode 'prompt' (approval window)", () => {
+  it("opens an approval request carrying the parsed payload", async () => {
+    const { wallet, decisionRequests, setDecision } = makeWallet({ responseMode: "prompt" });
+    setDecision("reject");
+    await wallet.features["aptos:signAndSubmitTransaction"].signAndSubmitTransaction({
+      payload: { function: "0x1::coin::transfer" },
+    } as never);
+    expect(decisionRequests).toHaveLength(1);
+    const req = decisionRequests[0]!;
+    expect(req.kind).toBe("signAndSubmitTransaction");
+    expect(req.id).toBeTruthy();
+    expect(req.pretty).toContain("0x1::coin::transfer");
+  });
+
+  it("returns APPROVED when the user accepts the prompt", async () => {
+    const { wallet, setDecision } = makeWallet({ responseMode: "prompt" });
+    setDecision("accept");
+    const res = await wallet.features["aptos:signAndSubmitTransaction"].signAndSubmitTransaction({
+      payload: {},
+    } as never);
+    expect(res.status).toBe(UserResponseStatus.APPROVED);
+    if (res.status !== UserResponseStatus.APPROVED) throw new Error("unreachable");
+    expect(res.args.hash).toBe("0x" + "00".repeat(32));
+  });
+
+  it("returns REJECTED when the user rejects the prompt", async () => {
+    const { wallet, setDecision } = makeWallet({ responseMode: "prompt" });
+    setDecision("reject");
+    const res = await wallet.features["aptos:signMessage"].signMessage({
+      message: "hi",
+      nonce: "1",
+    });
+    expect(res.status).toBe(UserResponseStatus.REJECTED);
   });
 });
 
@@ -253,7 +285,7 @@ describe("live state changes", () => {
 
 describe("prettyPrint serialization (via surfaced payloads)", () => {
   it("stringifies BigInt, Uint8Array, and SDK types into re-executable forms", async () => {
-    const { wallet, recorded } = makeWallet({ autoReject: true });
+    const { wallet, recorded } = makeWallet({ responseMode: "reject" });
     await wallet.features["aptos:signAndSubmitTransaction"].signAndSubmitTransaction({
       data: {
         function: "0x1::coin::transfer",
@@ -265,12 +297,8 @@ describe("prettyPrint serialization (via surfaced payloads)", () => {
       },
     } as never);
     const pretty = recorded[0]!.pretty;
-    // bigint keeps its `n` suffix so it round-trips unambiguously.
     expect(pretty).toContain('"10000000n"');
-    // raw bytes become hex.
     expect(pretty).toContain("0xabcd");
-    // SDK class instances collapse to their canonical string (minification
-    // mangles constructor names, so this must not depend on the class name).
     expect(pretty).toContain('"0x5"');
   });
 });

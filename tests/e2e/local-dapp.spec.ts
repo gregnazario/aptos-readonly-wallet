@@ -32,7 +32,7 @@ test.describe("connect + payload capture (AIP-62)", () => {
     setWalletState,
     getPayloads,
   }) => {
-    await setWalletState({ address: IMPERSONATED, autoReject: true });
+    await setWalletState({ address: IMPERSONATED, responseMode: "reject" });
     const page = await context.newPage();
     await page.goto("/");
     await connectWhenReady(page);
@@ -65,7 +65,7 @@ test.describe("connect + payload capture (AIP-62)", () => {
     context,
     setWalletState,
   }) => {
-    await setWalletState({ address: IMPERSONATED, autoReject: false });
+    await setWalletState({ address: IMPERSONATED, responseMode: "accept" });
     const page = await context.newPage();
     await page.goto("/");
     await connectWhenReady(page);
@@ -78,7 +78,7 @@ test.describe("connect + payload capture (AIP-62)", () => {
   });
 
   test("captures signMessage input", async ({ context, setWalletState, getPayloads }) => {
-    await setWalletState({ address: IMPERSONATED, autoReject: true });
+    await setWalletState({ address: IMPERSONATED, responseMode: "reject" });
     const page = await context.newPage();
     await page.goto("/");
     await connectWhenReady(page);
@@ -99,7 +99,7 @@ test.describe("connect + payload capture (AIP-62)", () => {
     setWalletState,
     getPayloads,
   }) => {
-    await setWalletState({ address: IMPERSONATED, autoReject: true, injectLegacyApi: true });
+    await setWalletState({ address: IMPERSONATED, responseMode: "reject", injectLegacyApi: true });
     const page = await context.newPage();
     await page.goto("/");
     await expect.poll(() => page.evaluate(() => window.VOW_TEST.hasLegacy())).toBe(true);

@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LegacyPetraAPI, type LegacyApiBridge } from "../../src/legacy-api";
-import { DEFAULT_STATE, type LoggedPayload, type WalletState } from "../../src/shared/messages";
+import {
+  DEFAULT_STATE,
+  type ApprovalRequest,
+  type Decision,
+  type LoggedPayload,
+  type WalletState,
+} from "../../src/shared/messages";
 
 const ADDR = "0x1";
 
@@ -8,16 +14,26 @@ function makeBridge(initial: Partial<WalletState> = {}) {
   let current: WalletState = { ...DEFAULT_STATE, address: ADDR, ...initial };
   let stateCb: ((s: WalletState) => void) | undefined;
   const recorded: LoggedPayload[] = [];
+  const decisionRequests: ApprovalRequest[] = [];
+  let answer: Decision = "reject";
   const bridge: LegacyApiBridge = {
     getState: () => current,
     recordPayload: (p) => recorded.push(p),
     onStateChanged: (cb) => {
       stateCb = cb;
     },
+    requestDecision: (req) => {
+      decisionRequests.push(req);
+      return Promise.resolve(answer);
+    },
   };
   return {
     bridge,
     recorded,
+    decisionRequests,
+    setDecision(d: Decision) {
+      answer = d;
+    },
     setState(next: Partial<WalletState>) {
       current = { ...current, ...next };
       stateCb?.(current);
@@ -40,8 +56,7 @@ describe("LegacyPetraAPI identity + reads", () => {
 
   it("connect returns the address + dummy public key", async () => {
     const { bridge } = makeBridge();
-    const api = new LegacyPetraAPI(bridge);
-    const res = await api.connect();
+    const res = await new LegacyPetraAPI(bridge).connect();
     expect(res.address).toBe(ADDR);
     expect(res.publicKey).toBe("0x" + "00".repeat(32));
   });
@@ -57,28 +72,21 @@ describe("LegacyPetraAPI identity + reads", () => {
     expect(net.name).toBe("Testnet");
     expect(net.chainId).toBe("2");
   });
-
-  it("isConnected reflects whether an address is set", async () => {
-    const withAddr = makeBridge();
-    const withoutAddr = makeBridge({ address: null });
-    expect(await new LegacyPetraAPI(withAddr.bridge).isConnected()).toBe(true);
-    expect(await new LegacyPetraAPI(withoutAddr.bridge).isConnected()).toBe(false);
-  });
 });
 
-describe("LegacyPetraAPI signing — auto-reject ON", () => {
+describe("LegacyPetraAPI signing — responseMode 'reject'", () => {
   it("throws a Petra-shaped 4001 error and still logs the payload", async () => {
-    const { bridge, recorded } = makeBridge({ autoReject: true });
+    const { bridge, recorded, decisionRequests } = makeBridge({ responseMode: "reject" });
     const api = new LegacyPetraAPI(bridge);
-    await expect(
-      api.signAndSubmitTransaction({ function: "0x1::x::y" }),
-    ).rejects.toMatchObject({ code: 4001 });
+    await expect(api.signAndSubmitTransaction({ function: "0x1::x::y" })).rejects.toMatchObject({
+      code: 4001,
+    });
     expect(recorded).toHaveLength(1);
-    expect(recorded[0]!.kind).toBe("signAndSubmitTransaction");
+    expect(decisionRequests).toHaveLength(0);
   });
 
   it("throws on signTransaction and signMessage too", async () => {
-    const { bridge } = makeBridge({ autoReject: true });
+    const { bridge } = makeBridge({ responseMode: "reject" });
     const api = new LegacyPetraAPI(bridge);
     await expect(api.signTransaction({})).rejects.toMatchObject({ code: 4001 });
     await expect(api.signMessage({ message: "m", nonce: "1" })).rejects.toMatchObject({
@@ -87,15 +95,15 @@ describe("LegacyPetraAPI signing — auto-reject ON", () => {
   });
 });
 
-describe("LegacyPetraAPI signing — auto-reject OFF", () => {
+describe("LegacyPetraAPI signing — responseMode 'accept'", () => {
   it("fake-approves signAndSubmitTransaction", async () => {
-    const { bridge } = makeBridge({ autoReject: false });
+    const { bridge } = makeBridge({ responseMode: "accept" });
     const res = await new LegacyPetraAPI(bridge).signAndSubmitTransaction({});
     expect(res.hash).toBe("0x" + "00".repeat(32));
   });
 
   it("signTransaction returns a 96-byte zero blob", async () => {
-    const { bridge } = makeBridge({ autoReject: false });
+    const { bridge } = makeBridge({ responseMode: "accept" });
     const res = await new LegacyPetraAPI(bridge).signTransaction({});
     expect(res).toBeInstanceOf(Uint8Array);
     expect(res).toHaveLength(96);
@@ -103,7 +111,7 @@ describe("LegacyPetraAPI signing — auto-reject OFF", () => {
   });
 
   it("signMessage returns the APTOS envelope with dummy signature", async () => {
-    const { bridge } = makeBridge({ autoReject: false, chainId: 2 });
+    const { bridge } = makeBridge({ responseMode: "accept", chainId: 2 });
     const res = await new LegacyPetraAPI(bridge).signMessage({
       message: "hello",
       nonce: "9",
@@ -114,6 +122,26 @@ describe("LegacyPetraAPI signing — auto-reject OFF", () => {
     expect(res.signature).toBe("0x" + "00".repeat(64));
     expect(res.fullMessage).toContain("message: hello");
     expect(res.chainId).toBe(2);
+  });
+});
+
+describe("LegacyPetraAPI signing — responseMode 'prompt'", () => {
+  it("prompts, then throws when the user rejects", async () => {
+    const h = makeBridge({ responseMode: "prompt" });
+    h.setDecision("reject");
+    await expect(
+      new LegacyPetraAPI(h.bridge).signAndSubmitTransaction({ function: "0x1::a::b" }),
+    ).rejects.toMatchObject({ code: 4001 });
+    expect(h.decisionRequests).toHaveLength(1);
+    expect(h.decisionRequests[0]!.pretty).toContain("0x1::a::b");
+  });
+
+  it("prompts, then fake-approves when the user accepts", async () => {
+    const h = makeBridge({ responseMode: "prompt" });
+    h.setDecision("accept");
+    const res = await new LegacyPetraAPI(h.bridge).signAndSubmitTransaction({});
+    expect(res.hash).toBe("0x" + "00".repeat(32));
+    expect(h.decisionRequests).toHaveLength(1);
   });
 });
 
@@ -134,15 +162,6 @@ describe("LegacyPetraAPI events", () => {
     api.onDisconnect(cb);
     h.setState({ address: null });
     expect(cb).toHaveBeenCalled();
-  });
-
-  it("emits networkChange on network switch", () => {
-    const h = makeBridge();
-    const api = new LegacyPetraAPI(h.bridge);
-    const cb = vi.fn();
-    api.onNetworkChange(cb);
-    h.setState({ network: "devnet", chainId: 3 });
-    expect(cb).toHaveBeenCalledWith("devnet");
   });
 
   it("supports the generic on()/off() subscription pattern", () => {

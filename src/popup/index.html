@@ -8,13 +8,19 @@
   <body>
     <header>
       <h1>
-        <span class="eye" aria-hidden="true">👁️</span>
+        <svg class="eye" viewBox="0 0 48 48" aria-hidden="true">
+          <rect width="48" height="48" rx="10" fill="#2563eb" />
+          <path
+            d="M24 14c-7 0-12.5 5.6-14 10 1.5 4.4 7 10 14 10s12.5-5.6 14-10c-1.5-4.4-7-10-14-10zm0 16a6 6 0 1 1 0-12 6 6 0 0 1 0 12zm0-9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"
+            fill="#fff"
+          />
+        </svg>
         View-Only Wallet
       </h1>
       <p class="sub">
-        Impersonates an Aptos address. Registers with dApps as
-        <strong>"Petra"</strong> so they'll surface it. Transactions are never
-        signed — the payload is logged here and to the page's devtools console.
+        Impersonates an Aptos address. Transactions are never signed — the
+        payload is logged and (in Ask-me mode) shown in an approval window so
+        you can accept, reject, or copy it to execute elsewhere.
       </p>
     </header>
 
@@ -36,16 +42,20 @@
           <option value="localnet">Localnet (4)</option>
         </select>
       </div>
-      <div class="row toggle">
-        <input id="auto-reject" type="checkbox" checked />
-        <label for="auto-reject">
-          Auto-reject signing requests
-          <span class="hint">
-            Off → return fake <code>APPROVED</code> with all-zero signatures.
-            The dApp's success path runs; anything produced is invalid on-chain.
-          </span>
-        </label>
+      <div class="row">
+        <label for="response-mode">On signing request</label>
+        <select id="response-mode">
+          <option value="prompt">Ask me (approval window)</option>
+          <option value="accept">Always simulate accept</option>
+          <option value="reject">Always reject</option>
+        </select>
       </div>
+      <p class="hint">
+        <strong>Ask me</strong> opens a window with the parsed payload +
+        Accept/Reject. <strong>Simulate accept</strong> returns a fake
+        <code>APPROVED</code> (all-zero signatures, invalid on-chain).
+        <strong>Reject</strong> always returns a user-rejection.
+      </p>
       <div class="row toggle">
         <input id="impersonate-petra" type="checkbox" checked />
         <label for="impersonate-petra">
@@ -75,7 +85,10 @@
     <section class="card">
       <div class="row between">
         <h2>Intercepted payloads</h2>
-        <button id="clear" type="button" class="link">Clear</button>
+        <span class="actions">
+          <button id="history" type="button" class="link">View all ↗</button>
+          <button id="clear" type="button" class="link">Clear</button>
+        </span>
       </div>
       <ol id="log" class="log" aria-live="polite">
         <li class="empty">No payloads yet. Connect on a dApp and try a transaction.</li>
@@ -83,7 +96,7 @@
     </section>
 
     <footer>
-      <small>AIP-62 · wallet-standard · does not use <code>window.aptos</code>.</small>
+      <small>AIP-62 · wallet-standard</small>
     </footer>
 
     <script type="module" src="./popup.ts"></script>

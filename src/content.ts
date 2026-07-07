@@ -4,9 +4,11 @@
  * `chrome.runtime` / `chrome.storage` (to reach the extension).
  *
  * Bridge duties:
- *   1. Forward page → background messages (state requests, payload logs).
- *   2. Stream state changes from chrome.storage back into the page so the
- *      MAIN-world wallet can emit `aptos:onAccountChange` / network change.
+ *   1. Forward page → background messages (state requests, payload logs,
+ *      approval requests).
+ *   2. Stream state changes from chrome.storage back into the page.
+ *   3. Relay approval decisions from the background back into the page so the
+ *      MAIN-world wallet can resolve its pending signing promise.
  */
 
 import {
@@ -43,6 +45,24 @@ window.addEventListener("message", (event: MessageEvent) => {
       payload: data.payload,
     });
     return;
+  }
+
+  if (data.kind === "open-approval") {
+    chrome.runtime.sendMessage({
+      tag: VOW_TAG,
+      kind: "open-approval",
+      request: data.request,
+    });
+    return;
+  }
+});
+
+// Decision routed back from the background (via chrome.tabs.sendMessage to
+// this specific frame). Relay it into the page for the waiting wallet.
+chrome.runtime.onMessage.addListener((msg) => {
+  if (!msg || msg.tag !== VOW_TAG) return;
+  if (msg.kind === "decision") {
+    sendToPage({ tag: VOW_TAG, kind: "decision", id: msg.id, decision: msg.decision });
   }
 });
 
