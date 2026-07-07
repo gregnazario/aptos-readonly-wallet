@@ -11,8 +11,8 @@
  *   - "auto-reject OFF" returns dummy all-zero outputs.
  */
 
-import { Ed25519Signature } from "@aptos-labs/ts-sdk";
 import type { LoggedPayload, WalletState } from "./shared/messages";
+import { prettyPrint } from "./shared/serialize";
 
 type LegacyEvent = "accountChange" | "networkChange" | "disconnect";
 
@@ -89,16 +89,7 @@ export class LegacyPetraAPI {
   }
 
   private _surface(kind: LoggedPayload["kind"], raw: unknown) {
-    const pretty = JSON.stringify(
-      raw,
-      (_k, v) => {
-        if (typeof v === "bigint") return v.toString() + "n";
-        if (v instanceof Uint8Array)
-          return "0x" + Array.from(v).map((b) => b.toString(16).padStart(2, "0")).join("");
-        return v;
-      },
-      2,
-    );
+    const pretty = prettyPrint(raw);
     // eslint-disable-next-line no-console
     console.groupCollapsed(
       `%c[View-Only Wallet · legacy] ${kind}`,
@@ -247,6 +238,3 @@ export class LegacyPetraAPI {
     this._listeners[event]?.delete(cb);
   }
 }
-
-// Silence unused-import warning for Ed25519Signature (kept for future use).
-void Ed25519Signature;

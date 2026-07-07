@@ -244,8 +244,14 @@ The pretty-printer handles the tricky types:
 | :---------------------------------------- | :------------------------------------- |
 | `BigInt`                                  | `"10000000n"` (suffixed `n`)           |
 | `Uint8Array`                              | `"0xabcd…"` (hex-prefixed)             |
-| `AccountAddress` / `Ed25519PublicKey` / … | `AccountAddress(0x1)` (ctor-wrapped)   |
+| `AccountAddress` / `Ed25519PublicKey` / … | `"0x1"` (canonical string)             |
 | anything else                             | standard JSON                          |
+
+SDK class instances are collapsed to their canonical string via
+`constructor !== Object` rather than by class name — the Aptos SDK ships
+minified, so any name-based check would be dead code in a real build. The
+serializer lives in `src/shared/serialize.ts` and is shared by the AIP-62
+wallet and the legacy shim.
 
 ---
 
@@ -271,6 +277,37 @@ Why the manual reload? Content scripts with `world: "MAIN"` aren't
 HMR-compatible because the page's JS realm can't subscribe to the Vite dev
 server's WebSocket. The popup (which lives in the extension's own origin)
 does get HMR.
+
+### Testing
+
+| Command             | What it runs                                                                   |
+| :------------------ | :----------------------------------------------------------------------------- |
+| `pnpm test`         | Vitest unit tests (`tests/unit/`) — wallet logic, legacy shim, serializer.     |
+| `pnpm test:watch`   | Vitest in watch mode.                                                          |
+| `pnpm test:e2e`     | Playwright E2E (`tests/e2e/`) — loads the built extension in real Chromium.    |
+| `pnpm test:all`     | `typecheck` → unit → `build` → E2E, in order. The full gate.                   |
+
+**Unit tests** run in a `happy-dom` environment and exercise the wallet /
+legacy-shim behavior directly with a mock bridge (no browser needed).
+
+**E2E tests** launch headless Chromium with the built `dist/` extension
+loaded (`channel: "chromium"` — the full build, not headless-shell), seed
+`chrome.storage` via the service worker, and drive a local test dApp
+(`tests/e2e/dapp/`, served by `tests/e2e/server.mjs`) through the real
+AIP-62 discovery handshake. They assert the payload is captured in storage.
+
+Before running E2E the first time:
+
+```bash
+pnpm build                       # produce dist/ (the extension under test)
+npx playwright install chromium  # download the browser
+pnpm test:e2e
+```
+
+The suite includes a **live smoke test against `https://app.thala.fi`**
+(`tests/e2e/thala.spec.ts`) that verifies the extension injects and captures
+a payload on the real target origin. It auto-skips when the site is
+unreachable, or set `VOW_E2E_SKIP_LIVE=1` to skip it deliberately.
 
 Files you're most likely to edit:
 
@@ -302,10 +339,14 @@ Files you're most likely to edit:
 └──────────────────────────────┘       └──────────────────────────────┘
 ```
 
-- **`src/inject.ts`** runs in the page's MAIN world. It creates the
-  `ViewOnlyWallet` and calls `registerWallet(wallet)`, which dispatches the
-  standard `wallet-standard:register-wallet` event. dApps listening for
-  that event discover the wallet immediately.
+- **`src/inject.ts`** runs in the page's MAIN world. It requests the stored
+  state, then creates the `ViewOnlyWallet` and calls `registerWallet(wallet)`,
+  which dispatches the standard `wallet-standard:register-wallet` event.
+  Registration is deferred until the first state arrives (with a 500 ms
+  fallback) so the wallet registers under the correct identity — Petra vs.
+  View-Only Wallet — since `wallet-standard` caches wallets by name and can't
+  rename them afterward. wallet-standard's late-registration path re-announces
+  the wallet to dApps that are already listening.
 - **`src/wallet.ts`** implements every required AIP-62 feature
   (`aptos:connect`, `aptos:disconnect`, `aptos:account`, `aptos:network`,
   `aptos:onAccountChange`, `aptos:onNetworkChange`, `aptos:signTransaction`,

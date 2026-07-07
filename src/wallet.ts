@@ -40,6 +40,7 @@ import {
   VOW_TAG,
   type WalletState,
 } from "./shared/messages";
+import { prettyPrint } from "./shared/serialize";
 
 /**
  * Petra-style icon: black rounded square with the stylized white "P" mark.
@@ -115,33 +116,6 @@ export class ViewOnlyWalletAccount implements AptosWalletAccount {
 
 type AccountChangeCb = (acc: AccountInfo) => void;
 type NetworkChangeCb = (net: NetworkInfo) => void;
-
-/**
- * Serializer that survives BigInt, Uint8Array, and the Aptos SDK's various
- * `Serializable` subclasses. Anything with a `toString()` gets its string
- * form; everything else falls back to plain JSON.
- */
-function prettyPrint(value: unknown): string {
-  return JSON.stringify(
-    value,
-    (_key, v) => {
-      if (typeof v === "bigint") return v.toString() + "n";
-      if (v instanceof Uint8Array) {
-        return "0x" + Array.from(v).map((b) => b.toString(16).padStart(2, "0")).join("");
-      }
-      if (v && typeof v === "object" && "toString" in v && typeof (v as { toString: unknown }).toString === "function") {
-        // Only expand SDK types that have a meaningful toString — otherwise
-        // fall through to the default object serialization.
-        const ctor = (v as object).constructor?.name ?? "";
-        if (/Address|PublicKey|Authenticator|Hex|MoveVector|Module/.test(ctor)) {
-          return `${ctor}(${(v as { toString(): string }).toString()})`;
-        }
-      }
-      return v;
-    },
-    2,
-  );
-}
 
 function stateToNetworkInfo(state: WalletState): NetworkInfo {
   const nameMap: Record<WalletState["network"], Network> = {
