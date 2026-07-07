@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>VOW Test dApp</title>
+  </head>
+  <body>
+    <h1>View-Only Wallet — E2E test dApp</h1>
+    <p id="status">booting…</p>
+    <!--
+      Minimal implementation of the *app* side of the AIP-62 / wallet-standard
+      discovery handshake. The extension's inject.ts runs at document_start and
+      calls registerWallet(), which (a) dispatches a
+      `wallet-standard:register-wallet` event and (b) listens for
+      `wallet-standard:app-ready`. We handle both so we discover the wallet
+      whether it registered before or after this script runs.
+
+      Everything the Playwright test needs is exposed on `window.VOW_TEST`.
+    -->
+    <script>
+      (function () {
+        const wallets = [];
+        const api = {
+          register(...ws) {
+            wallets.push(...ws);
+          },
+        };
+
+        // Wallets that registered *before* us respond to app-ready.
+        window.dispatchEvent(
+          new CustomEvent("wallet-standard:app-ready", { detail: api }),
+        );
+        // Wallets that register *after* us fire register-wallet.
+        window.addEventListener("wallet-standard:register-wallet", (event) => {
+          // event.detail is `({ register }) => register(wallet)`.
+          event.detail(api);
+        });
+
+        const find = (name) => {
+          const w = wallets.find((x) => x.name === name);
+          if (!w) throw new Error(`wallet "${name}" not registered`);
+          return w;
+        };
+
+        window.VOW_TEST = {
+          walletNames: () => wallets.map((w) => w.name),
+
+          async connect(name) {
+            const res = await find(name).features["aptos:connect"].connect(
+              false,
+              undefined,
+            );
+            return {
+              status: res.status,
+              address: res.args ? res.args.address.toString() : null,
+              publicKey: res.args ? res.args.publicKey.toString() : null,
+            };
+          },
+
+          async network(name) {
+            const net = await find(name).features["aptos:network"].network();
+            return { name: String(net.name), chainId: net.chainId };
+          },
+
+          async signAndSubmit(name, payload) {
+            const res = await find(name).features[
+              "aptos:signAndSubmitTransaction"
+            ].signAndSubmitTransaction(payload);
+            return { status: res.status, hash: res.args ? res.args.hash : null };
+          },
+
+          async signMessage(name, input) {
+            const res = await find(name).features["aptos:signMessage"].signMessage(
+              input,
+            );
+            return {
+              status: res.status,
+              fullMessage: res.args ? res.args.fullMessage : null,
+            };
+          },
+
+          // Legacy window.aptos path (older dApps).
+          hasLegacy: () => typeof window.aptos !== "undefined",
+          async legacyConnect() {
+            return await window.aptos.connect();
+          },
+          async legacySignAndSubmit(payload) {
+            return await window.aptos.signAndSubmitTransaction(payload);
+          },
+        };
+
+        document.getElementById("status").textContent =
+          "ready: " + wallets.map((w) => w.name).join(", ");
+      })();
+    </script>
+  </body>
+</html>

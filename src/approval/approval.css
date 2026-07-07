@@ -1,0 +1,100 @@
+:root {
+  --bg: #ffffff;
+  --fg: #0f172a;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --card: #f8fafc;
+  --blue: #2563eb;
+  --green: #16a34a;
+  --red: #dc2626;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f172a;
+    --fg: #e2e8f0;
+    --muted: #94a3b8;
+    --border: #1e293b;
+    --card: #111c33;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+}
+.topbar .eye { width: 24px; height: 24px; border-radius: 6px; }
+.topbar .title { font-weight: 700; }
+
+.content { padding: 16px; }
+
+.kind { font-size: 18px; margin: 0 0 2px; }
+.origin { margin: 0; color: var(--blue); font-weight: 600; word-break: break-all; }
+.time { margin: 2px 0 14px; color: var(--muted); font-size: 12px; }
+
+.vow-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  margin: 0 0 14px;
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.vow-fields dt { color: var(--muted); font-weight: 600; }
+.vow-fields dd {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.vow-muted { color: var(--muted); grid-column: 1 / -1; margin: 0; }
+
+.raw { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 14px; }
+.raw summary { cursor: pointer; padding: 10px 12px; font-weight: 600; }
+.raw-actions { display: flex; gap: 8px; padding: 0 12px 10px; }
+.raw pre {
+  margin: 0;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  overflow: auto;
+  max-height: 240px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.note { color: var(--muted); font-size: 12px; margin: 0 0 14px; }
+
+.decide { display: flex; gap: 10px; }
+.status { color: var(--muted); font-size: 12px; margin: 10px 0 0; text-align: center; }
+
+.vow-btn {
+  font: inherit;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  cursor: pointer;
+  background: var(--card);
+  color: var(--fg);
+}
+.vow-btn:disabled { opacity: 0.5; cursor: default; }
+.vow-btn.ghost { padding: 6px 10px; font-size: 12px; }
+.decide .vow-btn { flex: 1; padding: 12px; font-size: 15px; }
+.vow-btn.accept { background: var(--green); border-color: var(--green); color: #fff; }
+.vow-btn.reject { background: var(--red); border-color: var(--red); color: #fff; }

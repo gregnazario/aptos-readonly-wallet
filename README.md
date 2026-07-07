@@ -3,18 +3,21 @@
 A Chrome MV3 extension that impersonates any Aptos address on any dApp via
 the official [AIP-62 Wallet
 Standard](https://github.com/aptos-foundation/AIPs/blob/main/aips/aip-62.md).
-When a dApp asks it to sign or submit a transaction, it prints the **entire
-payload** (to both the page's devtools console and the extension popup) and
-returns a rejected `UserResponse` — nothing is ever signed.
+When a dApp asks it to sign or submit a transaction, it logs the **entire
+payload** and (by default) opens an **approval window** showing the payload
+parsed nicely, with buttons to **copy / download the raw JSON** and to
+**Simulate Accept** or **Reject**. Nothing is ever actually signed — Simulate
+Accept just returns an all-zero dummy signature. You can also switch to
+"always reject" or "always accept" modes that skip the window.
 
 Useful for:
 
 - Previewing the full raw transaction a dApp is about to submit on your
-  behalf before signing with a real wallet.
+  behalf, and copying the payload to execute it elsewhere.
 - Debugging dApp integrations where you don't have (or don't want to give
   up) the target account's private key.
 - Testing that your AIP-62 wallet-adapter integration handles rejected
-  signatures gracefully.
+  signatures — and the post-signing success path — gracefully.
 
 > Primary registration is done through `wallet-standard:register-wallet`,
 > the event the AIP-62 / `@aptos-labs/wallet-standard` package standardizes.
@@ -122,16 +125,23 @@ Available scripts:
    (`0x0000…0001`) are accepted; the popup normalizes on save.
 3. Choose the **Network** dropdown (Mainnet / Testnet / Devnet / Localnet).
    This sets the `chainId` the wallet reports to dApps.
-4. **Auto-reject signing requests** checkbox:
-   - **On** (default, safe): every `signTransaction` / `signAndSubmitTransaction`
-     / `signMessage` call is logged and immediately returns
-     `UserResponseStatus.REJECTED`. The dApp's "user cancelled" path runs.
-   - **Off**: the wallet still can't actually sign anything, but it returns
-     a fake `UserResponseStatus.APPROVED` with all-zero dummy signatures and
-     a zero transaction hash. This lets you exercise the dApp's
-     post-signing UI flow. ⚠️ The outputs are invalid — nothing is ever on
-     chain, and any `waitForTransaction(hash)` call on the dApp side will
-     error.
+4. **On signing request** dropdown:
+   - **Ask me (approval window)** (default): every `signTransaction` /
+     `signAndSubmitTransaction` / `signMessage` call opens an approval window
+     showing the parsed payload + raw JSON (with Copy / Download) and
+     **Simulate Accept** / **Reject** buttons. The dApp's promise stays
+     pending until you click; closing the window counts as a rejection.
+   - **Always reject**: every request is logged and immediately returns
+     `UserResponseStatus.REJECTED`, no window. The dApp's "user cancelled"
+     path runs.
+   - **Always simulate accept**: immediately returns a fake
+     `UserResponseStatus.APPROVED` with all-zero dummy signatures and a zero
+     transaction hash, no window. Exercises the dApp's post-signing UI flow.
+     ⚠️ The outputs are invalid — nothing is ever on chain, and any
+     `waitForTransaction(hash)` call will error.
+
+   **Simulate Accept** (whether via the window or "always accept") produces
+   the same all-zero dummy outputs — it is never a real signature.
 5. **Register as Petra** checkbox:
    - **On** (default): the AIP-62 wallet registers with `name: "Petra"`
      and a Petra-style P icon. Required for dApps that allowlist wallets
@@ -150,11 +160,19 @@ Available scripts:
      Matches the original design intent — useful for verifying your dApp's
      AIP-62 integration doesn't secretly depend on the legacy API.
    - Changing this requires reloading the dApp tab.
-7. Click **Save**. You'll see a confirmation like `✓ Saved 0x0000000… · as Petra · auto-reject ON · window.aptos ON`.
+7. Click **Save**. You'll see a confirmation like `✓ Saved 0x0000000… · as Petra · ask me · window.aptos ON`.
 
 You can come back to the popup at any time to change the address. The wallet
 fires `aptos:onAccountChange` automatically, so any dApp that's already
 connected will see the new account without a reconnect.
+
+### The payload log & full history
+
+Every intercepted payload is logged. The popup shows the most recent few
+(parsed, each with Copy / Download). Click **View all ↗** (or right-click the
+extension → **Options**) to open the **full-page history**: every captured
+payload with per-entry **Copy** / **Download** / **Delete**, plus **Copy all**,
+**Download all**, and **Clear all**. The toolbar badge shows the count.
 
 ---
 
@@ -244,8 +262,14 @@ The pretty-printer handles the tricky types:
 | :---------------------------------------- | :------------------------------------- |
 | `BigInt`                                  | `"10000000n"` (suffixed `n`)           |
 | `Uint8Array`                              | `"0xabcd…"` (hex-prefixed)             |
-| `AccountAddress` / `Ed25519PublicKey` / … | `AccountAddress(0x1)` (ctor-wrapped)   |
+| `AccountAddress` / `Ed25519PublicKey` / … | `"0x1"` (canonical string)             |
 | anything else                             | standard JSON                          |
+
+SDK class instances are collapsed to their canonical string via
+`constructor !== Object` rather than by class name — the Aptos SDK ships
+minified, so any name-based check would be dead code in a real build. The
+serializer lives in `src/shared/serialize.ts` and is shared by the AIP-62
+wallet and the legacy shim.
 
 ---
 
@@ -271,6 +295,37 @@ Why the manual reload? Content scripts with `world: "MAIN"` aren't
 HMR-compatible because the page's JS realm can't subscribe to the Vite dev
 server's WebSocket. The popup (which lives in the extension's own origin)
 does get HMR.
+
+### Testing
+
+| Command             | What it runs                                                                   |
+| :------------------ | :----------------------------------------------------------------------------- |
+| `pnpm test`         | Vitest unit tests (`tests/unit/`) — wallet logic, legacy shim, serializer.     |
+| `pnpm test:watch`   | Vitest in watch mode.                                                          |
+| `pnpm test:e2e`     | Playwright E2E (`tests/e2e/`) — loads the built extension in real Chromium.    |
+| `pnpm test:all`     | `typecheck` → unit → `build` → E2E, in order. The full gate.                   |
+
+**Unit tests** run in a `happy-dom` environment and exercise the wallet /
+legacy-shim behavior directly with a mock bridge (no browser needed).
+
+**E2E tests** launch headless Chromium with the built `dist/` extension
+loaded (`channel: "chromium"` — the full build, not headless-shell), seed
+`chrome.storage` via the service worker, and drive a local test dApp
+(`tests/e2e/dapp/`, served by `tests/e2e/server.mjs`) through the real
+AIP-62 discovery handshake. They assert the payload is captured in storage.
+
+Before running E2E the first time:
+
+```bash
+pnpm build                       # produce dist/ (the extension under test)
+npx playwright install chromium  # download the browser
+pnpm test:e2e
+```
+
+The suite includes a **live smoke test against `https://app.thala.fi`**
+(`tests/e2e/thala.spec.ts`) that verifies the extension injects and captures
+a payload on the real target origin. It auto-skips when the site is
+unreachable, or set `VOW_E2E_SKIP_LIVE=1` to skip it deliberately.
 
 Files you're most likely to edit:
 
@@ -302,32 +357,51 @@ Files you're most likely to edit:
 └──────────────────────────────┘       └──────────────────────────────┘
 ```
 
-- **`src/inject.ts`** runs in the page's MAIN world. It creates the
-  `ViewOnlyWallet` and calls `registerWallet(wallet)`, which dispatches the
-  standard `wallet-standard:register-wallet` event. dApps listening for
-  that event discover the wallet immediately.
+- **`src/inject.ts`** runs in the page's MAIN world. It requests the stored
+  state, then creates the `ViewOnlyWallet` and calls `registerWallet(wallet)`,
+  which dispatches the standard `wallet-standard:register-wallet` event.
+  Registration is deferred until the first state arrives (with a 500 ms
+  fallback) so the wallet registers under the correct identity — Petra vs.
+  View-Only Wallet — since `wallet-standard` caches wallets by name and can't
+  rename them afterward. wallet-standard's late-registration path re-announces
+  the wallet to dApps that are already listening.
 - **`src/wallet.ts`** implements every required AIP-62 feature
   (`aptos:connect`, `aptos:disconnect`, `aptos:account`, `aptos:network`,
   `aptos:onAccountChange`, `aptos:onNetworkChange`, `aptos:signTransaction`,
   `aptos:signAndSubmitTransaction`, `aptos:signMessage`). Signing methods
-  pretty-print the payload and return `UserResponseStatus.REJECTED`.
+  pretty-print the payload, then resolve per `responseMode`: instant
+  reject/accept, or — in "prompt" mode — await the user's decision from the
+  approval window before returning.
 - **`src/content.ts`** bridges MAIN ↔ service worker via
-  `window.postMessage` ↔ `chrome.runtime.sendMessage`.
-- **`src/background.ts`** owns `chrome.storage.local` (state + payload log)
-  and drives the toolbar badge.
-- **`src/popup/`** is a tiny vanilla-TS UI for setting the impersonated
-  address + network and reviewing the log of intercepted payloads.
+  `window.postMessage` ↔ `chrome.runtime.sendMessage`, and relays approval
+  decisions from the background back into the page.
+- **`src/background.ts`** owns `chrome.storage.local` (state + payload log),
+  drives the toolbar badge, and manages the **approval-window lifecycle**:
+  it opens a window per prompt (tracking it in `chrome.storage.session`),
+  routes the Accept/Reject decision back to the exact tab/frame that asked,
+  and treats a closed window as a rejection.
+- **`src/approval/`** is the approval window UI (parsed payload + raw JSON
+  copy/download + Simulate Accept / Reject).
+- **`src/popup/`** sets the impersonated address / network / response mode
+  and shows a compact payload log.
+- **`src/history/`** is the full-page history view (also the options page):
+  every captured payload with per-entry and bulk copy/download/delete.
+- **`src/shared/`** holds the cross-realm message contract
+  (`messages.ts`), the payload serializer (`serialize.ts`), and the shared
+  payload-rendering helpers (`payload-view.ts`).
 
 ---
 
 ## What each AIP-62 method does
 
-The three signing rows depend on the **Auto-reject** toggle in the popup.
-Default is `on`.
+The three signing rows depend on the **On signing request** mode in the popup
+(default **Ask me**). In Ask-me mode the approval window is shown first, then
+the row behaves as the "reject" or "accept" column below depending on which
+button you click (or the "reject" column if you close the window).
 
-| AIP-62 feature                    | `auto-reject: on`                                                         | `auto-reject: off`                                                                    |
+| AIP-62 feature                    | reject (window Reject, or "always reject")                               | accept (window Simulate Accept, or "always accept")                                   |
 | :-------------------------------- | :------------------------------------------------------------------------ | :------------------------------------------------------------------------------------ |
-| `aptos:connect`                   | Returns the impersonated `AccountInfo` (with a zero dummy public key).    | _(same)_                                                                              |
+| `aptos:connect`                   | Returns the impersonated `AccountInfo` (never prompts).                   | _(same)_                                                                              |
 | `aptos:disconnect`                | Marks the wallet disconnected.                                            | _(same)_                                                                              |
 | `aptos:account`                   | Returns the current `AccountInfo`.                                        | _(same)_                                                                              |
 | `aptos:network`                   | Returns the selected `NetworkInfo` (name + chainId).                      | _(same)_                                                                              |

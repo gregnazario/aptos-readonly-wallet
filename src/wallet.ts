@@ -35,11 +35,14 @@ import {
   type WalletIcon,
 } from "@aptos-labs/wallet-standard";
 import {
+  type ApprovalRequest,
   CHAIN_IDS,
+  type Decision,
   type LoggedPayload,
   VOW_TAG,
   type WalletState,
 } from "./shared/messages";
+import { prettyPrint } from "./shared/serialize";
 
 /**
  * Petra-style icon: black rounded square with the stylized white "P" mark.
@@ -116,33 +119,6 @@ export class ViewOnlyWalletAccount implements AptosWalletAccount {
 type AccountChangeCb = (acc: AccountInfo) => void;
 type NetworkChangeCb = (net: NetworkInfo) => void;
 
-/**
- * Serializer that survives BigInt, Uint8Array, and the Aptos SDK's various
- * `Serializable` subclasses. Anything with a `toString()` gets its string
- * form; everything else falls back to plain JSON.
- */
-function prettyPrint(value: unknown): string {
-  return JSON.stringify(
-    value,
-    (_key, v) => {
-      if (typeof v === "bigint") return v.toString() + "n";
-      if (v instanceof Uint8Array) {
-        return "0x" + Array.from(v).map((b) => b.toString(16).padStart(2, "0")).join("");
-      }
-      if (v && typeof v === "object" && "toString" in v && typeof (v as { toString: unknown }).toString === "function") {
-        // Only expand SDK types that have a meaningful toString — otherwise
-        // fall through to the default object serialization.
-        const ctor = (v as object).constructor?.name ?? "";
-        if (/Address|PublicKey|Authenticator|Hex|MoveVector|Module/.test(ctor)) {
-          return `${ctor}(${(v as { toString(): string }).toString()})`;
-        }
-      }
-      return v;
-    },
-    2,
-  );
-}
-
 function stateToNetworkInfo(state: WalletState): NetworkInfo {
   const nameMap: Record<WalletState["network"], Network> = {
     mainnet: Network.MAINNET,
@@ -159,8 +135,10 @@ function stateToNetworkInfo(state: WalletState): NetworkInfo {
 export interface ViewOnlyWalletBridge {
   /** Fires when the user changes the impersonated address via the popup. */
   onStateChanged(cb: (state: WalletState) => void): void;
-  /** Record an intercepted payload (surfaces in extension popup). */
+  /** Record an intercepted payload (surfaces in extension popup / history). */
   recordPayload(p: LoggedPayload): void;
+  /** Open the approval window and resolve with the user's decision. */
+  requestDecision(request: ApprovalRequest): Promise<Decision>;
 }
 
 export class ViewOnlyWallet implements AptosWallet {
@@ -254,11 +232,19 @@ export class ViewOnlyWallet implements AptosWallet {
     }
   }
 
-  private _surfacePayload(
+  /**
+   * Log the payload (console + popup history), then resolve how to respond:
+   *   - responseMode "reject" / "accept" → answer instantly, no window.
+   *   - responseMode "prompt" → open the approval window and await the click.
+   */
+  private async _surfaceAndDecide(
     kind: LoggedPayload["kind"],
     rawPayload: unknown,
-  ): void {
+  ): Promise<Decision> {
     const pretty = prettyPrint(rawPayload);
+    const origin = window.location.origin;
+    const timestamp = Date.now();
+
     // Print to page console in a neatly boxed format.
     // eslint-disable-next-line no-console
     console.groupCollapsed(
@@ -270,11 +256,17 @@ export class ViewOnlyWallet implements AptosWallet {
     // eslint-disable-next-line no-console
     console.groupEnd();
 
-    this._bridge.recordPayload({
-      timestamp: Date.now(),
-      origin: window.location.origin,
+    this._bridge.recordPayload({ timestamp, origin, kind, pretty });
+
+    const mode = this._state.responseMode;
+    if (mode === "reject") return "reject";
+    if (mode === "accept") return "accept";
+    return this._bridge.requestDecision({
+      id: crypto.randomUUID(),
+      origin,
       kind,
       pretty,
+      timestamp,
     });
   }
 
@@ -343,8 +335,8 @@ export class ViewOnlyWallet implements AptosWallet {
           ? firstArg
           : { rawTransaction: firstArg, asFeePayer: maybeFeePayer ?? false };
 
-        this._surfacePayload("signTransaction", toLog);
-        if (this._state.autoReject) {
+        const decision = await this._surfaceAndDecide("signTransaction", toLog);
+        if (decision === "reject") {
           return { status: UserResponseStatus.REJECTED };
         }
         // V1.1 callers pass an object and expect { authenticator, rawTransaction }.
@@ -368,8 +360,8 @@ export class ViewOnlyWallet implements AptosWallet {
     "aptos:signAndSubmitTransaction": {
       version: "1.1.0",
       signAndSubmitTransaction: async (tx) => {
-        this._surfacePayload("signAndSubmitTransaction", tx);
-        if (this._state.autoReject) {
+        const decision = await this._surfaceAndDecide("signAndSubmitTransaction", tx);
+        if (decision === "reject") {
           return { status: UserResponseStatus.REJECTED };
         }
         return {
@@ -381,8 +373,8 @@ export class ViewOnlyWallet implements AptosWallet {
     "aptos:signMessage": {
       version: "1.0.0",
       signMessage: async (input) => {
-        this._surfacePayload("signMessage", input);
-        if (this._state.autoReject) {
+        const decision = await this._surfaceAndDecide("signMessage", input);
+        if (decision === "reject") {
           return { status: UserResponseStatus.REJECTED };
         }
         // Build the full signed-message envelope with zero signature.

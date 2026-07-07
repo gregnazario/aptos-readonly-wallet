@@ -6,16 +6,39 @@ export default defineManifest({
   version: "0.1.0",
   description:
     "Impersonates an Aptos address and prints AIP-62 transaction payloads instead of signing them.",
+  icons: {
+    16: "icons/eye-16.png",
+    32: "icons/eye-32.png",
+    48: "icons/eye-48.png",
+    128: "icons/eye-128.png",
+  },
   action: {
     default_title: "Aptos View-Only Wallet",
     default_popup: "src/popup/index.html",
+    default_icon: {
+      16: "icons/eye-16.png",
+      32: "icons/eye-32.png",
+      48: "icons/eye-48.png",
+      128: "icons/eye-128.png",
+    },
   },
+  // Full-page payload history, reachable from the popup and via right-click →
+  // Options on the extension.
+  options_page: "src/history/index.html",
   background: {
     service_worker: "src/background.ts",
     type: "module",
   },
   permissions: ["storage"],
   host_permissions: ["<all_urls>"],
+  // The approval window is opened by the service worker as an extension page;
+  // listing it here ensures the bundler builds it and it's loadable.
+  web_accessible_resources: [
+    {
+      resources: ["src/approval/index.html"],
+      matches: ["<all_urls>"],
+    },
+  ],
   // Two content scripts: one runs in the page's MAIN world to register the
   // AIP-62 wallet; the other runs in the ISOLATED world to bridge to the
   // service worker (which owns chrome.storage).

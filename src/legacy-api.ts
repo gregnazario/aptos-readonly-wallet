@@ -11,8 +11,13 @@
  *   - "auto-reject OFF" returns dummy all-zero outputs.
  */
 
-import { Ed25519Signature } from "@aptos-labs/ts-sdk";
-import type { LoggedPayload, WalletState } from "./shared/messages";
+import type {
+  ApprovalRequest,
+  Decision,
+  LoggedPayload,
+  WalletState,
+} from "./shared/messages";
+import { prettyPrint } from "./shared/serialize";
 
 type LegacyEvent = "accountChange" | "networkChange" | "disconnect";
 
@@ -23,6 +28,7 @@ export interface LegacyApiBridge {
   getState: () => WalletState;
   recordPayload: (p: LoggedPayload) => void;
   onStateChanged: (cb: (s: WalletState) => void) => void;
+  requestDecision: (request: ApprovalRequest) => Promise<Decision>;
 }
 
 export class LegacyPetraAPI {
@@ -88,17 +94,8 @@ export class LegacyPetraAPI {
     return address;
   }
 
-  private _surface(kind: LoggedPayload["kind"], raw: unknown) {
-    const pretty = JSON.stringify(
-      raw,
-      (_k, v) => {
-        if (typeof v === "bigint") return v.toString() + "n";
-        if (v instanceof Uint8Array)
-          return "0x" + Array.from(v).map((b) => b.toString(16).padStart(2, "0")).join("");
-        return v;
-      },
-      2,
-    );
+  private _surface(kind: LoggedPayload["kind"], raw: unknown): string {
+    const pretty = prettyPrint(raw);
     // eslint-disable-next-line no-console
     console.groupCollapsed(
       `%c[View-Only Wallet · legacy] ${kind}`,
@@ -113,6 +110,25 @@ export class LegacyPetraAPI {
       origin: window.location.origin,
       kind,
       pretty,
+    });
+    return pretty;
+  }
+
+  /**
+   * Log the payload, then resolve how to respond per `responseMode`. In
+   * "prompt" mode this opens the same approval window the AIP-62 wallet uses.
+   */
+  private async _decide(kind: LoggedPayload["kind"], raw: unknown): Promise<Decision> {
+    const pretty = this._surface(kind, raw);
+    const mode = this._bridge.getState().responseMode;
+    if (mode === "reject") return "reject";
+    if (mode === "accept") return "accept";
+    return this._bridge.requestDecision({
+      id: crypto.randomUUID(),
+      origin: window.location.origin,
+      kind,
+      pretty,
+      timestamp: Date.now(),
     });
   }
 
@@ -163,8 +179,7 @@ export class LegacyPetraAPI {
 
   async signAndSubmitTransaction(transaction: unknown): Promise<{ hash: string; output?: unknown }> {
     this._requireAddress();
-    this._surface("signAndSubmitTransaction", transaction);
-    if (this._bridge.getState().autoReject) {
+    if ((await this._decide("signAndSubmitTransaction", transaction)) === "reject") {
       throw this._rejectedError("signAndSubmitTransaction");
     }
     return { hash: DUMMY_HEX_32 };
@@ -172,8 +187,7 @@ export class LegacyPetraAPI {
 
   async signTransaction(transaction: unknown): Promise<Uint8Array> {
     this._requireAddress();
-    this._surface("signTransaction", transaction);
-    if (this._bridge.getState().autoReject) {
+    if ((await this._decide("signTransaction", transaction)) === "reject") {
       throw this._rejectedError("signTransaction");
     }
     // Legacy API returns a serialized signed-txn byte blob. We return 96
@@ -198,8 +212,7 @@ export class LegacyPetraAPI {
     signature: string;
   }> {
     this._requireAddress();
-    this._surface("signMessage", payload);
-    if (this._bridge.getState().autoReject) {
+    if ((await this._decide("signMessage", payload)) === "reject") {
       throw this._rejectedError("signMessage");
     }
     const { address, chainId } = this._bridge.getState();
@@ -247,6 +260,3 @@ export class LegacyPetraAPI {
     this._listeners[event]?.delete(cb);
   }
 }
-
-// Silence unused-import warning for Ed25519Signature (kept for future use).
-void Ed25519Signature;
