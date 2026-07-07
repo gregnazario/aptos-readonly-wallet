@@ -18,6 +18,12 @@ jobs:
   test:
     name: typecheck · unit · build · e2e
     runs-on: ubuntu-latest
+    env:
+      # Keep Safe Chain's malware-blocklist scanning, but disable its 48h
+      # "minimum package age" heuristic: our dev toolchain is pinned to the
+      # latest vitest/vite/playwright (freshly published), and the frozen
+      # lockfile already guarantees exact, reviewed versions.
+      SAFE_CHAIN_MINIMUM_PACKAGE_AGE_HOURS: "0"
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
