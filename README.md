@@ -77,6 +77,7 @@ different signer.
 - [Using it on an Aptos dApp](#using-it-on-an-aptos-dapp)
 - [Seeing the payload](#seeing-the-payload)
 - [Development workflow](#development-workflow)
+- [Cutting a release](#cutting-a-release)
 - [How it works (architecture)](#how-it-works-architecture)
 - [What each AIP-62 method does](#what-each-aip-62-method-does)
 - [Why a dummy public key?](#why-a-dummy-public-key)
@@ -387,6 +388,42 @@ Files you're most likely to edit:
 | `src/popup/popup.ts`   | Popup UI logic.                                              |
 | `src/popup/popup.css`  | Popup styles.                                                |
 | `manifest.config.ts`   | MV3 manifest as TypeScript (via `@crxjs/vite-plugin`).       |
+
+---
+
+## Cutting a release
+
+This repo is **not** published to the Chrome Web Store. Distribution is a
+prebuilt zip attached to a GitHub Release, which people install via **Load
+unpacked** (see [Install → Option A](#install)). The
+[`.github/workflows/release.yml`](.github/workflows/release.yml) workflow builds
+and publishes it for you.
+
+**To publish a new version:**
+
+1. Bump the version in **both** `manifest.config.ts` (`version:`) and
+   `package.json` (`"version"`) so the extension and tag agree, and commit that
+   to `main`.
+2. Tag the commit and push the tag:
+
+   ```bash
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+
+   The tag must match `v*.*.*`. (Alternatively, open the **Actions** tab →
+   **Release** → **Run workflow** and enter the tag, e.g. `v0.1.0` — it will
+   create the tag at the current `main` commit.)
+3. The workflow runs typecheck + unit tests + build, zips `dist/` into
+   `view-only-wallet-v0.1.0.zip`, and creates a GitHub **Release** with that
+   asset attached. Re-running for an existing tag re-uploads the zip.
+
+Watch it under the repo's **Actions** tab. Once it's green, the zip is on the
+[Releases](https://github.com/gregnazario/aptos-readonly-wallet/releases) page
+for anyone to download.
+
+**To produce the same zip locally** (e.g. to hand someone a build without a
+release): `pnpm package` → `view-only-wallet.zip`.
 
 ---
 
