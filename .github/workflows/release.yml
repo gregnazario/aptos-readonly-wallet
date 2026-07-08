@@ -1,0 +1,83 @@
+name: Release
+
+# Publishes a prebuilt, loadable extension zip to a GitHub Release so people
+# can install without a local build. Push a version tag (e.g. `v0.1.0`), or run
+# manually with a tag input.
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v0.1.0). Created at the current commit if missing."
+        required: true
+
+# Privileged: this workflow writes a release. Nothing else.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build · package · publish
+    runs-on: ubuntu-latest
+    env:
+      # See ci.yml — keep Safe Chain's malware scan, drop its 48h age gate.
+      SAFE_CHAIN_MINIMUM_PACKAGE_AGE_HOURS: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        # zizmor: ignore[cache-poisoning] no `cache:` is configured, so setup-node
+        # never restores a shared cache into this release-writing job.
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "20"
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Aikido Safe Chain
+        uses: aptos-labs/actions/aikidosec-safe-chain@fdd3a3a628c840d5c35086a87e9cc3141b635505 # main
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Gate the release on the same checks CI runs.
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build extension
+        run: pnpm build
+
+      - name: Package dist/ into a loadable zip
+        id: package
+        # Pass refs through env (never interpolate ${{ }} into a run: script) so
+        # a crafted tag name can't inject shell.
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          TAG="${INPUT_TAG:-$REF_NAME}"
+          ZIP="view-only-wallet-${TAG}.zip"
+          (cd dist && zip -qr "../${ZIP}" .)
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "zip=${ZIP}" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.package.outputs.tag }}
+          ZIP: ${{ steps.package.outputs.zip }}
+        run: |
+          NOTES=$'Prebuilt Chrome extension.\n\n**Install:** download `'"$ZIP"$'`, unzip it, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the unzipped folder.'
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ZIP" --clobber
+          else
+            gh release create "$TAG" "$ZIP" --title "$TAG" --notes "$NOTES"
+          fi
