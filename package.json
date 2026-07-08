@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:all": "pnpm typecheck && pnpm test && pnpm build && pnpm test:e2e"
+    "test:all": "pnpm typecheck && pnpm test && pnpm build && pnpm test:e2e",
+    "package": "pnpm build && cd dist && zip -qr ../view-only-wallet.zip . && cd - >/dev/null && echo 'Wrote view-only-wallet.zip (unzip → Load unpacked)'"
   },
   "dependencies": {
     "@aptos-labs/ts-sdk": "^5.2.1",
