@@ -209,7 +209,23 @@ Available scripts:
      Matches the original design intent — useful for verifying your dApp's
      AIP-62 integration doesn't secretly depend on the legacy API.
    - Changing this requires reloading the dApp tab.
-7. Click **Save**. You'll see a confirmation like `✓ Saved 0x0000000… · as Petra · ask me · window.aptos ON`.
+7. **Simulate transactions** checkbox:
+   - **On** (default): the extension previews every intercepted transaction
+     by **simulating** it against the selected network's public fullnode and
+     shows the outcome — a *Would succeed* / *Would fail* badge, the VM
+     status on failure, estimated gas + fee, and the event / state-change
+     counts (with the raw result available to copy). The panel appears both
+     in the popup's payload log and in the approval window, each with a
+     **Retry** button. No private key is needed — the simulation runs with
+     the impersonated address and a skipped auth-key check.
+   - **Off**: the extension never reaches the network; only the payload is
+     recorded.
+   - Simulation only ever runs from the extension's own pages (popup /
+     approval), never from the dApp, and only for transaction payloads
+     (`signMessage` has nothing to execute). Multi-agent and raw/script
+     transactions can't be reconstructed for simulation and are labelled as
+     such.
+8. Click **Save**. You'll see a confirmation like `✓ Saved 0x0000000… · as Petra · ask me · window.aptos ON · simulate ON`.
 
 You can come back to the popup at any time to change the address. The wallet
 fires `aptos:onAccountChange` automatically, so any dApp that's already
@@ -218,10 +234,12 @@ connected will see the new account without a reconnect.
 ### The payload log & full history
 
 Every intercepted payload is logged. The popup shows the most recent few
-(parsed, each with Copy / Download). Click **View all ↗** (or right-click the
-extension → **Options**) to open the **full-page history**: every captured
-payload with per-entry **Copy** / **Download** / **Delete**, plus **Copy all**,
-**Download all**, and **Clear all**. The toolbar badge shows the count.
+(parsed, each with Copy / Download, and — when **Simulate transactions** is on
+— a **Simulation** panel with a **Retry** button previewing the outcome).
+Click **View all ↗** (or right-click the extension → **Options**) to open the
+**full-page history**: every captured payload with per-entry **Copy** /
+**Download** / **Delete**, plus **Copy all**, **Download all**, and
+**Clear all**. The toolbar badge shows the count.
 
 ---
 
@@ -583,8 +601,13 @@ signatures.
   status in the standard — but a dApp that treats "rejected" as a fatal error
   will surface an error UI. Use "Ask me" or "Always accept" if you need the
   dApp to see an `APPROVED` response.
-- No simulated-transaction support. The payload is recorded as-is; the
-  wallet does not call `aptos.transaction.simulate` for you.
+- Simulation is a best-effort preview, not a guarantee. It runs against the
+  public fullnode with a skipped auth-key check, so results depend on current
+  chain state and can differ from a real, signed execution. Single-signer
+  entry-function calls (including sponsored / fee-payer) are supported;
+  multi-agent and raw/script transactions are not reconstructable and are
+  reported as such. Turn the **Simulate transactions** toggle off to keep the
+  extension fully offline.
 - Firefox is not supported yet — MV3 content-script `world: "MAIN"` ships
   in Firefox 128+, and this extension hasn't been tested there. PRs welcome.
 - The Aptos SDK (~900 KB, ~520 KB gzipped) is bundled into a separate chunk
