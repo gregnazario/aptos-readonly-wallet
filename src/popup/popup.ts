@@ -25,6 +25,8 @@ import {
   payloadFilename,
   renderFields,
 } from "../shared/payload-view";
+import { isSimulatable } from "../shared/simulate";
+import { renderSimulation } from "../shared/simulation-view";
 
 const STATE_KEY = "state";
 const PAYLOADS_KEY = "payloads";
@@ -40,11 +42,19 @@ const networkSelect = $<HTMLSelectElement>("#network");
 const responseModeSelect = $<HTMLSelectElement>("#response-mode");
 const injectLegacyInput = $<HTMLInputElement>("#inject-legacy");
 const impersonatePetraInput = $<HTMLInputElement>("#impersonate-petra");
+const simulateInput = $<HTMLInputElement>("#simulate");
 const saveBtn = $<HTMLButtonElement>("#save");
 const saveStatus = $<HTMLParagraphElement>("#save-status");
 const clearBtn = $<HTMLButtonElement>("#clear");
 const historyBtn = $<HTMLButtonElement>("#history");
 const logEl = $<HTMLOListElement>("#log");
+
+/**
+ * The last-saved state, used by the log renderer to know which network to
+ * simulate against and which sender address to reconstruct with. Kept in sync
+ * via `renderState` (initial load + storage changes).
+ */
+let currentState: WalletState = normalizeState(undefined);
 
 async function loadState(): Promise<WalletState> {
   const res = await chrome.storage.local.get(STATE_KEY);
@@ -52,11 +62,13 @@ async function loadState(): Promise<WalletState> {
 }
 
 function renderState(state: WalletState) {
+  currentState = state;
   addressInput.value = state.address ?? "";
   networkSelect.value = state.network;
   responseModeSelect.value = state.responseMode;
   injectLegacyInput.checked = state.injectLegacyApi;
   impersonatePetraInput.checked = state.impersonatePetra;
+  simulateInput.checked = state.simulate;
 }
 
 function renderLog(items: LoggedPayload[]) {
@@ -68,8 +80,14 @@ function renderLog(items: LoggedPayload[]) {
     logEl.appendChild(li);
     return;
   }
+  let autoRanOne = false;
   for (const item of items.slice(0, 10)) {
-    logEl.appendChild(renderEntry(item));
+    // Auto-run simulation for just the newest transaction to avoid firing a
+    // burst of network calls every time the popup opens; the rest get a button.
+    const canSim = currentState.simulate && isSimulatable(item.kind);
+    const autoRun = canSim && !autoRanOne;
+    if (autoRun) autoRanOne = true;
+    logEl.appendChild(renderEntry(item, autoRun));
   }
   if (items.length > 10) {
     const li = document.createElement("li");
@@ -79,7 +97,7 @@ function renderLog(items: LoggedPayload[]) {
   }
 }
 
-function renderEntry(item: LoggedPayload): HTMLLIElement {
+function renderEntry(item: LoggedPayload, autoRunSim = false): HTMLLIElement {
   const li = document.createElement("li");
 
   const head = document.createElement("div");
@@ -114,6 +132,11 @@ function renderEntry(item: LoggedPayload): HTMLLIElement {
   details.append(summary, actions, pre);
 
   li.append(head, fields, details);
+
+  if (currentState.simulate && isSimulatable(item.kind)) {
+    li.appendChild(renderSimulation(currentState, item, { autoRun: autoRunSim }));
+  }
+
   return li;
 }
 
@@ -145,6 +168,7 @@ saveBtn.addEventListener("click", async () => {
     responseMode,
     injectLegacyApi: injectLegacyInput.checked,
     impersonatePetra: impersonatePetraInput.checked,
+    simulate: simulateInput.checked,
   };
   await chrome.storage.local.set({ [STATE_KEY]: state });
 
@@ -157,6 +181,7 @@ saveBtn.addEventListener("click", async () => {
     state.impersonatePetra ? "as Petra" : "as View-Only Wallet",
     modeLabel,
     state.injectLegacyApi ? "window.aptos ON" : "AIP-62 only",
+    state.simulate ? "simulate ON" : "simulate OFF",
   ].join(" · ");
   saveStatus.textContent = address
     ? `✓ Saved ${address.slice(0, 10)}… · ${modes}`
@@ -179,6 +204,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (changes[STATE_KEY]) {
     renderState(normalizeState(changes[STATE_KEY].newValue));
+    // The log entries embed simulation panels bound to the current network /
+    // address / simulate toggle, so re-render them when the state changes.
+    void loadLog().then(renderLog);
   }
 });
 

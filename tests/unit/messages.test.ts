@@ -20,6 +20,7 @@ describe("shared/messages contract", () => {
       responseMode: "prompt",
       injectLegacyApi: true,
       impersonatePetra: true,
+      simulate: true,
     } satisfies WalletState);
   });
 
@@ -69,7 +70,14 @@ describe("normalizeState", () => {
       responseMode: "accept",
       injectLegacyApi: false,
       impersonatePetra: false,
+      simulate: false,
     };
     expect(normalizeState(s)).toEqual(s);
+  });
+
+  it("defaults simulate to on and preserves an explicit choice", () => {
+    expect(normalizeState({}).simulate).toBe(true);
+    expect(normalizeState({ simulate: false }).simulate).toBe(false);
+    expect(normalizeState({ simulate: true }).simulate).toBe(true);
   });
 });

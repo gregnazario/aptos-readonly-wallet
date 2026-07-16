@@ -87,6 +87,18 @@ export interface WalletState {
    * this requires a page reload because wallet-standard caches by name.
    */
   impersonatePetra: boolean;
+  /**
+   * When true (default), the extension UI (popup + approval window) simulates
+   * intercepted transactions against the selected network's public fullnode
+   * and shows the outcome — success/failure, VM status, estimated gas — so you
+   * can preview what *would* happen if the transaction were actually executed.
+   *
+   * Simulation needs no private key: it's run with the impersonated address and
+   * a skipped authentication-key check. It only reaches out to the network from
+   * the extension's own pages (never the dApp), and only for transaction
+   * payloads. Turn it off to keep the extension fully offline.
+   */
+  simulate: boolean;
 }
 
 export interface LoggedPayload {
@@ -107,6 +119,7 @@ export const DEFAULT_STATE: WalletState = {
   responseMode: "prompt",
   injectLegacyApi: true,
   impersonatePetra: true,
+  simulate: true,
 };
 
 export const CHAIN_IDS: Record<WalletState["network"], number> = {
@@ -142,5 +155,6 @@ export function normalizeState(raw: unknown): WalletState {
     responseMode,
     injectLegacyApi: s.injectLegacyApi ?? DEFAULT_STATE.injectLegacyApi,
     impersonatePetra: s.impersonatePetra ?? DEFAULT_STATE.impersonatePetra,
+    simulate: s.simulate ?? DEFAULT_STATE.simulate,
   };
 }

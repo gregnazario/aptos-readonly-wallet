@@ -4,7 +4,13 @@
  * sends the user's Simulate Accept / Reject decision back to the background,
  * which routes it to the waiting wallet and closes this window.
  */
-import { type ApprovalRequest, type Decision, VOW_TAG } from "../shared/messages";
+import {
+  type ApprovalRequest,
+  type Decision,
+  normalizeState,
+  VOW_TAG,
+  type WalletState,
+} from "../shared/messages";
 import {
   button,
   copyToClipboard,
@@ -14,6 +20,8 @@ import {
   payloadFilename,
   renderFields,
 } from "../shared/payload-view";
+import { isSimulatable } from "../shared/simulate";
+import { renderSimulation } from "../shared/simulation-view";
 
 const params = new URLSearchParams(location.search);
 const id = params.get("id");
@@ -37,10 +45,11 @@ async function init() {
     content.textContent = "This request is no longer pending.";
     return;
   }
-  render(req);
+  const stateRes = await chrome.storage.local.get("state");
+  render(req, normalizeState(stateRes.state));
 }
 
-function render(req: ApprovalRequest) {
+function render(req: ApprovalRequest, state: WalletState) {
   content.textContent = "";
 
   const kindEl = document.createElement("h1");
@@ -57,6 +66,12 @@ function render(req: ApprovalRequest) {
 
   const parsed = parsePayload(req.kind, req.pretty);
   const fields = renderFields(parsed);
+
+  // Preview what the transaction would do before the user decides.
+  const sim =
+    state.simulate && isSimulatable(req.kind)
+      ? renderSimulation(state, req, { autoRun: true })
+      : null;
 
   // Raw JSON, collapsible, with copy/download.
   const details = document.createElement("details");
@@ -101,7 +116,9 @@ function render(req: ApprovalRequest) {
     chrome.runtime.sendMessage({ tag: VOW_TAG, kind: "approval-decision", id, decision });
   }
 
-  content.append(kindEl, origin, time, fields, details, note, decideRow, status);
+  content.append(kindEl, origin, time, fields);
+  if (sim) content.append(sim);
+  content.append(details, note, decideRow, status);
 }
 
 void init();

@@ -78,6 +78,18 @@
           </span>
         </label>
       </div>
+      <div class="row toggle">
+        <input id="simulate" type="checkbox" checked />
+        <label for="simulate">
+          Simulate transactions
+          <span class="hint">
+            Preview what a transaction <em>would</em> do — success/failure, VM
+            status, and estimated gas — by simulating it against the selected
+            network. No key needed; only the extension's own pages reach the
+            network. Off → fully offline.
+          </span>
+        </label>
+      </div>
       <button id="save" type="button">Save</button>
       <p id="save-status" class="muted" aria-live="polite"></p>
     </section>

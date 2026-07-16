@@ -172,6 +172,42 @@ button.link {
 }
 .vow-btn:hover { filter: brightness(1.05); }
 
+/* Simulation panel (shared with the approval window). */
+.vow-sim {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.vow-sim-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.vow-sim-title { font-weight: 600; color: var(--muted); }
+.vow-sim-run { margin: 0; }
+.vow-sim-result { margin-top: 6px; }
+.vow-sim-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 10px;
+}
+.vow-sim-badge.ok { background: color-mix(in srgb, #16a34a 20%, transparent); color: #16a34a; }
+.vow-sim-badge.bad { background: color-mix(in srgb, #dc2626 20%, transparent); color: #dc2626; }
+.vow-sim-error { margin: 6px 0 0; color: #dc2626; word-break: break-word; }
+.vow-sim-raw summary { cursor: pointer; color: var(--muted); margin-top: 4px; }
+.vow-sim-raw pre {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  max-height: 160px;
+  overflow: auto;
+}
+
 footer {
   text-align: center;
   margin-top: 8px;
