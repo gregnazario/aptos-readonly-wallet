@@ -23,6 +23,8 @@ export interface WalletStateInput {
   responseMode?: "prompt" | "accept" | "reject";
   injectLegacyApi?: boolean;
   impersonatePetra?: boolean;
+  /** Defaults to false so tests don't fire network simulations unless asked. */
+  simulate?: boolean;
 }
 
 export const test = base.extend<{
@@ -75,6 +77,7 @@ export const test = base.extend<{
         responseMode: s.responseMode ?? "reject",
         injectLegacyApi: s.injectLegacyApi ?? true,
         impersonatePetra: s.impersonatePetra ?? true,
+        simulate: s.simulate ?? false,
       };
       await serviceWorker.evaluate(
         (st) => chrome.storage.local.set({ state: st }),
