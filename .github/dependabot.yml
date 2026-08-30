@@ -5,6 +5,7 @@ updates:
     schedule:
       interval: weekly
     groups:
-      dependencies:
-        patterns:
-          - "*"
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
